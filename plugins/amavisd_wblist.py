@@ -317,11 +317,7 @@ def restriction(**kwargs):
     logger.debug('Possible policy recipients: %s' % str(valid_recipients))
 
     check_outbound = False
-    if (not check_outbound) and kwargs['sasl_username']:
-        check_outbound = True
-
-    sender_domain_is_local = is_local_domain(conn=conn_vmail, domain=sender_domain, include_alias_domain=False)
-    if (not check_outbound) and (alias_target_sender_domain or sender_domain_is_local):
+    if kwargs['sasl_username']:
         check_outbound = True
 
     id_of_client_cidr_networks = []
