@@ -3,7 +3,7 @@
 # Author: Zhang Huangbin (zhb@iredmail.org)
 
 ### BEGIN INIT INFO
-# Provides:          iredapd
+# Provides:          iredapd 
 # Required-Start:    $network $syslog
 # Required-Stop:     $network $syslog
 # Default-Start:     2 3 4 5
@@ -14,6 +14,7 @@
 
 PROG='iredapd'
 BINPATH='/opt/iredapd/iredapd.py'
+DELCACHE='/opt/iredapd/delete_cache.py'
 PIDFILE='/var/run/iredapd.pid'
 
 check_status() {
@@ -40,7 +41,7 @@ start() {
     fi
 
     echo "Starting ${PROG} ..."
-    python3 ${BINPATH}
+    python ${BINPATH}
     unset s
 }
 
@@ -64,6 +65,7 @@ stop() {
     else
         echo "${PROG} is already stopped."
     fi
+    python ${DELCACHE}
     unset s
 }
 

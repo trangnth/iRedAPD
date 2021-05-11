@@ -17,7 +17,7 @@
 #            mail.domain.co.uk
 #       smtp.mail.domain.co.uk
 #
-# --------------
+#--------------
 # Sample usages
 #
 # *) Block rDNS name 'mail.domain.co.uk':
@@ -40,17 +40,10 @@ from web import sqlquote
 from libs.logger import logger
 from libs import SMTP_ACTIONS
 from libs.utils import is_trusted_client
-import settings
-
-if settings.WBLIST_DISCARD_INSTEAD_OF_REJECT:
-    reject_action = SMTP_ACTIONS['discard']
-else:
-    reject_action = SMTP_ACTIONS['reject_blacklisted']
 
 
 def restriction(**kwargs):
     rdns_name = kwargs['smtp_session_data']['reverse_client_name']
-    client_address = kwargs['smtp_session_data']['client_address']
 
     # Bypass outgoing emails.
     if kwargs['sasl_username']:
@@ -61,7 +54,7 @@ def restriction(**kwargs):
         logger.debug('No reverse dns name, bypass.')
         return SMTP_ACTIONS['default']
 
-    if is_trusted_client(client_address):
+    if is_trusted_client(kwargs['client_address']):
         return SMTP_ACTIONS['default']
 
     _policy_rdns_names = [rdns_name]
@@ -86,7 +79,7 @@ def restriction(**kwargs):
     record = qr.fetchone()
     if record:
         rdns = str(record[0]).lower()
-        logger.info("[{}] Reverse client hostname is whitelisted: {}.".format(client_address, rdns))
+        logger.debug('[SQL] Found matched whitelist rdns: %s' % rdns)
 
         # better use 'DUNNO' instead of 'OK'
         return SMTP_ACTIONS['default']
@@ -101,7 +94,6 @@ def restriction(**kwargs):
     record = qr.fetchone()
     if record:
         rdns = str(record[0]).lower()
-        logger.info("[{}] Reverse client hostname is blacklisted: {}".format(client_address, rdns))
-        return reject_action
+        return SMTP_ACTIONS['reject_blacklisted_rdns'] + ' (' + rdns + ')'
 
     return SMTP_ACTIONS['default']

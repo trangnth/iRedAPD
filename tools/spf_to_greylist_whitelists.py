@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Author: Zhang Huangbin <zhb@iredmail.org>
 # Purpose: Query SPF DNS record of specified domains and import returned IP
@@ -50,7 +50,7 @@
 #
 # REFERENCES
 #
-#   * SPF Record Syntax: http://www.open-spf.org/SPF_Record_Syntax
+#   * SPF Record Syntax: http://www.openspf.org/SPF_Record_Syntax
 #   * A simpler shell script which does the same job, it lists all IP addresses
 #     and/or networks on terminal: https://bitbucket.org/zhb/spf-to-ip
 
@@ -99,7 +99,7 @@ if not domains:
     logger.info('* No valid domain names. Abort.')
     sys.exit()
 
-logger.info("* {} mail domains in total.".format(len(domains)))
+logger.info('* %d mail domains in total.' % len(domains))
 
 all_ips = set()
 domain_ips = {}
@@ -110,7 +110,7 @@ for domain in domains:
     if 'spf:' + domain in queried_domains:
         continue
 
-    logger.info("\t+ [{}]".format(domain))
+    logger.info('\t+ [%s]' % domain)
 
     # Query SPF record
     qr = dnsspf.query_spf(domain, queried_domains=queried_domains)
@@ -118,7 +118,7 @@ for domain in domains:
     queried_domains = qr['queried_domains']
 
     if spf:
-        logger.debug("\t\t+ SPF -> {}".format(spf))
+        logger.debug('\t\t+ SPF -> %s' % spf)
 
         # Parse returned SPF record
         qr = dnsspf.parse_spf(domain, spf, queried_domains=queried_domains, returned_ips=returned_ips)
@@ -133,7 +133,7 @@ for domain in domains:
     domain_ips[domain] = ips
     all_ips.update(ips)
 
-    logger.debug("\t\t+ Result: {}".format(ips))
+    logger.debug('\t\t+ Result: %s' % ips)
 
 if not all_ips:
     logger.info('* No IP address/network found. Exit.')
@@ -157,8 +157,8 @@ for domain in domain_ips:
         conn.delete('greylisting_whitelists',
                     vars=sql_vars,
                     where="comment=$comment")
-    except Exception as e:
-        logger.info("* <<< ERROR >>> Cannot delete old record for domain {}: {}".format(domain, repr(e)))
+    except Exception, e:
+        logger.info('* <<< ERROR >>> Cannot delete old record for domain %s: %s' % (domain, str(e)))
 
     # Insert new records
     for ip in domain_ips[domain]:
@@ -183,16 +183,16 @@ for domain in domain_ips:
                             vars={'ip': ip},
                             where='client_address=$ip')
 
-        except Exception as e:
+        except Exception, e:
             if e.__class__.__name__ == 'IntegrityError':
                 pass
             else:
-                logger.error("* <<< ERROR >>> Cannot insert new record for domain {}: {}".format(domain, repr(e)))
+                logger.error('* <<< ERROR >>> Cannot insert new record for domain %s: %s' % (domain, e.message))
 
 if submit_to_sql_db:
     logger.info('* Store domain names in SQL database as greylisting whitelists.')
     for d in domains:
         try:
             conn.insert('greylisting_whitelist_domains', domain=d)
-        except Exception as e:
-            logger.error("<<< ERROR >>> {}".format(repr(e)))
+        except Exception, e:
+            logger.error('<<< ERROR >>> %s' % str(e))

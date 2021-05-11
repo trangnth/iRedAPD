@@ -1,7 +1,6 @@
 from web import sqlquote
 
 from libs.logger import logger
-from libs import MAILLIST_POLICY_PUBLIC
 from libs import utils
 
 
@@ -22,8 +21,9 @@ def is_local_domain(conn,
     if utils.is_server_hostname(domain):
         return True
 
-    sql_quote_domain = sqlquote(domain)
     try:
+        sql_quote_domain = sqlquote(domain)
+
         # include backup mx domains by default.
         sql_backupmx = ''
         if not include_backupmx:
@@ -33,16 +33,16 @@ def is_local_domain(conn,
                    FROM domain
                   WHERE domain=%s AND active=1 %s
                   LIMIT 1""" % (sql_quote_domain, sql_backupmx)
-        logger.debug("[SQL] query local domain ({}): \n{}".format(domain, sql))
+        logger.debug('[SQL] query local domain (%s): \n%s' % (domain, sql))
 
         qr = conn.execute(sql)
         sql_record = qr.fetchone()
-        logger.debug("SQL query result: {}".format(repr(sql_record)))
+        logger.debug('SQL query result: %s' % str(sql_record))
 
         if sql_record:
             return True
-    except Exception as e:
-        logger.error("<!> Error while querying domain: {}".format(repr(e)))
+    except Exception, e:
+        logger.error('<!> Error while querying alias domain: %s' % str(e))
 
     # Query alias domain
     try:
@@ -54,16 +54,16 @@ def is_local_domain(conn,
                             AND alias_domain.alias_domain=%s
                       LIMIT 1""" % sql_quote_domain
 
-            logger.debug("[SQL] query alias domain ({}): \n{}".format(domain, repr(sql)))
+            logger.debug('[SQL] query alias domains (%s): \n%s' % (domain, sql))
 
             qr = conn.execute(sql)
             sql_record = qr.fetchone()
-            logger.debug("[SQL] query result: {}".format(repr(sql_record)))
+            logger.debug('SQL query result: %s' % str(sql_record))
 
             if sql_record:
                 return True
-    except Exception as e:
-        logger.error("<!> Error while querying alias domain: {}".format(repr(e)))
+    except Exception, e:
+        logger.error('<!> Error while querying alias domain: %s' % str(e))
 
     return False
 
@@ -72,7 +72,7 @@ def get_alias_target_domain(alias_domain, conn):
     """Query target domain of given alias domain name."""
     alias_domain = str(alias_domain).lower()
     if not utils.is_domain(alias_domain):
-        logger.debug("Given alias domain ({}) is not a valid domain name.".format(alias_domain))
+        logger.debug('Given alias_domain %s is not an valid domain name.' % alias_domain)
         return None
 
     sql = """SELECT alias_domain.target_domain
@@ -82,48 +82,14 @@ def get_alias_target_domain(alias_domain, conn):
                     AND alias_domain.alias_domain=%s
               LIMIT 1""" % sqlquote(alias_domain)
 
-    logger.debug("[SQL] query target domain of given alias domain ({}): \n{}".format(alias_domain, repr(sql)))
+    logger.debug('[SQL] query target domain of given alias domain (%s): \n%s' % (alias_domain, sql))
 
     qr = conn.execute(sql)
     sql_record = qr.fetchone()
-    logger.debug("[SQL] query result: {}".format(repr(sql_record)))
+    logger.debug('SQL query result: %s' % str(sql_record))
 
     if sql_record:
         target_domain = str(sql_record[0]).lower()
         return target_domain
     else:
         return None
-
-
-def get_access_policy(mail, account_type, conn):
-    """Get access policy of (mlmmj) mailing list or mail alias account.
-
-    Returns access policy (string) or None if account doesn't exist."""
-    _policy = None
-
-    if account_type == 'alias':
-        table = 'alias'
-    elif account_type == 'maillist':
-        table = 'maillists'
-    else:
-        return _policy
-
-    sql = """SELECT accesspolicy
-               FROM %s
-              WHERE address=%s
-              LIMIT 1""" % (table, sqlquote(mail))
-
-    logger.debug("[SQL] query access policy: \n{}".format(sql))
-
-    qr = conn.execute(sql)
-    record = qr.fetchone()
-    logger.debug("[SQL] query result: {}".format(repr(record)))
-
-    if record:
-        _policy = str(record[0]).lower()
-
-        # access_policy is not set, treats it as public.
-        if not _policy:
-            _policy = MAILLIST_POLICY_PUBLIC
-
-    return _policy

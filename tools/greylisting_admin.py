@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # Author: Zhang Huangbin <zhb@iredmail.org>
 # Purpose: Manage greylisting settings.
 
@@ -112,7 +112,7 @@ Sample usages:
 """
 
 if len(sys.argv) == 1:
-    print(USAGE)
+    print USAGE
     sys.exit()
 
 
@@ -197,7 +197,7 @@ gl_setting = lib_gl.get_gl_base_setting(account=rcpt, sender=sender)
 
 # Perform the operations
 if action == 'enable':
-    logger.info("* Enable greylisting: {} -> {}".format(sender, rcpt))
+    logger.info('* Enable greylisting: %s -> %s' % (sender, rcpt))
 
     qr = lib_gl.enable_greylisting(conn=conn2,
                                    account=rcpt,
@@ -206,7 +206,7 @@ if action == 'enable':
         logger.info(qr[1])
 
 elif action == 'disable':
-    logger.info("* Disable greylisting: {} -> {}".format(sender, rcpt))
+    logger.info('* Disable greylisting: %s -> %s' % (sender, rcpt))
 
     qr = lib_gl.disable_greylisting(conn=conn2,
                                     account=rcpt,
@@ -216,7 +216,7 @@ elif action == 'disable':
         logger.info(qr[1])
 
 elif action == 'delete':
-    logger.info("* Delete greylisting setting: {} -> {}".format(sender, rcpt))
+    logger.info('* Delete greylisting setting: %s -> %s' % (sender, rcpt))
     qr = lib_gl.delete_setting(conn=conn2,
                                account=rcpt,
                                sender=sender)
@@ -225,13 +225,11 @@ elif action == 'delete':
         logger.info(qr[1])
 
 elif action == 'whitelist-domain':
-    logger.info("* Whitelisting sender domain: {}".format(sender_domain))
-    qr = lib_gl.add_whitelist_domain(conn=conn2, domain=sender_domain)
-    if not qr[0]:
-        logger.info(qr[1])
+    logger.info('* Whitelisting sender domain: %s' % sender_domain)
+    lib_gl.add_whitelist_domain(conn=conn2, domain=sender_domain)
 
 elif action == 'remove-whitelist-domain':
-    logger.info("* Remove whitelisted sender domain: {}".format(sender_domain))
+    logger.info('* Remove whitelisted sender domain: %s' % sender_domain)
     lib_gl.remove_whitelisted_domain(domain=sender_domain, conn=conn2)
 
 elif action == 'list':
@@ -248,12 +246,12 @@ elif action == 'list':
                              order='priority DESC, sender_priority DESC')
 
         if not qr:
-            logger.info("* No greylisting settings.")
+            logger.info('* No greylisting settings.')
             sys.exit()
 
         output_format = '%-8s %-34s -> %-30s'
-        print(output_format % ('Status', 'Sender', 'Local Account'))
-        print('-' * 78)
+        print output_format % ('Status', 'Sender', 'Local Account')
+        print '-' * 78
 
         for i in qr:
             _account = i.account
@@ -268,12 +266,12 @@ elif action == 'list':
                 _account = '@. (anyone)'
 
             if _active:
-                print(output_format % ('enabled', _sender, _account))
+                print output_format % ('enabled', _sender, _account)
             else:
-                print(output_format % ('disabled', _sender, _account))
+                print output_format % ('disabled', _sender, _account)
 
-    except Exception as e:
-        logger.info(repr(e))
+    except Exception, e:
+        logger.info(str(e))
 
 elif action == 'list-whitelist-domains':
     # show whitelisted sender domain names
@@ -283,8 +281,8 @@ elif action == 'list-whitelist-domains':
         for r in qr:
             logger.info(r.domain)
 
-    except Exception as e:
-        logger.info(repr(e))
+    except Exception, e:
+        logger.info(str(e))
 
 elif action == 'list-whitelists':
     # show whitelisted senders in `greylisting_whitelists` and
@@ -303,12 +301,12 @@ elif action == 'list-whitelists':
                              order='account ASC, sender ASC')
 
         for r in qr:
-            logger.info("{} -> {}, '{}'".format(r.sender, r.account, r.comment))
+            logger.info('%s -> %s, "%s"' % (r.sender, r.account, r.comment))
 
         for r in qr_spf:
-            logger.info("{} -> {}, '{}'".format(r.sender, r.account, r.comment))
-    except Exception as e:
-        logger.info(repr(e))
+            logger.info('%s -> %s, "%s"' % (r.sender, r.account, r.comment))
+    except Exception, e:
+        logger.info(str(e))
 elif action == 'add-whitelist':
     # show whitelisted senders in `greylisting_whitelists` table.
     try:
@@ -316,5 +314,5 @@ elif action == 'add-whitelist':
                          account=rcpt,
                          sender=sender)
 
-    except Exception as e:
-        logger.info(repr(e))
+    except Exception, e:
+        logger.info(str(e))

@@ -36,7 +36,7 @@ start() {
     fi
 
     echo "Starting ${PROG} ..."
-    python3 ${BINPATH}
+    python ${BINPATH}
     unset s
 }
 

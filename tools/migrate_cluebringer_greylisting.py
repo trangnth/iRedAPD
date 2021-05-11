@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Author: Zhang Huangbin <zhb@iredmail.org>
 # Purpose: Migrate Cluebringer greylisting setting to iRedAPD.
@@ -30,17 +30,16 @@ from libs.utils import is_valid_amavisd_address
 from tools import logger, get_db_conn
 
 backend = settings.backend
-if backend in ['pgsql']:
-    sql_dbn = 'postgres'
-else:
-    # backend in ['ldap', 'mysql']
+if backend in ['ldap', 'mysql']:
     sql_dbn = 'mysql'
+elif backend in ['pgsql']:
+    sql_dbn = 'postgres'
 
-if not (cluebringer_db_host
-        and cluebringer_db_port
-        and cluebringer_db_name
-        and cluebringer_db_user
-        and cluebringer_db_password):
+if not (cluebringer_db_host and
+        cluebringer_db_port and
+        cluebringer_db_name and
+        cluebringer_db_user and
+        cluebringer_db_password):
     # Not run cluebringer
     sys.exit("Incorrect database info, please update cluebringer_db_* parameters.")
 
@@ -48,53 +47,45 @@ web.config.debug = False
 backend = settings.backend
 conn_iredapd = get_db_conn('iredapd')
 
-conn_cb = web.database(
-    dbn=sql_dbn,
-    host=cluebringer_db_host,
-    port=int(cluebringer_db_port),
-    db=cluebringer_db_name,
-    user=cluebringer_db_user,
-    pw=cluebringer_db_password,
-)
+conn_cb = web.database(dbn=sql_dbn,
+                       host=cluebringer_db_host,
+                       port=int(cluebringer_db_port),
+                       db=cluebringer_db_name,
+                       user=cluebringer_db_user,
+                       pw=cluebringer_db_password)
 
 conn_cb.supports_multiple_insert = True
 
-logger.info("* Backend: {}".format(backend))
+logger.info('* Backend: %s' % backend)
 
 #
 # Global greylisting setting
 #
 logger.info('* Migrate global greylisting setting.')
 logger.info('\t- Query enabled global greylisting setting.')
-qr = conn_cb.select(
-    'greylisting',
-    what='id',
-    where="name='Greylisting Inbound Emails' AND usegreylisting=1",
-    limit=1,
-)
+qr = conn_cb.select('greylisting',
+                    what='id',
+                    where="name='Greylisting Inbound Emails' AND usegreylisting=1",
+                    limit=1)
 
 if qr:
     logger.info('\t- Cluebringer has greylisting enabled globally.')
     # Check existing global greylisting setting
-    qr = conn_iredapd.select(
-        'greylisting',
-        what='id',
-        where="account='@.' AND sender='@.'",
-        limit=1,
-    )
+    qr = conn_iredapd.select('greylisting',
+                             what='id',
+                             where="account='@.' AND sender='@.'",
+                             limit=1)
 
     if qr:
         logger.info('\t- iRedAPD already has global greylisting setting, not migrate Cluebringer global setting.')
     else:
         logger.info("\t- iRedAPD doesn't have global greylisting setting, migrating ...")
-        conn_iredapd.insert(
-            'greylisting',
-            account='@.',
-            priority=0,
-            sender='@.',
-            sender_priority=0,
-            active=1,
-        )
+        conn_iredapd.insert('greylisting',
+                            account='@.',
+                            priority=0,
+                            sender='@.',
+                            sender_priority=0,
+                            active=1)
 
 #
 # no_greylisting settings
@@ -115,20 +106,18 @@ for r in qr:
         continue
 
     try:
-        conn_iredapd.insert(
-            'greylisting',
-            account=r.member,
-            priority=_priority,
-            sender='@.',
-            sender_priority=0,
-            active=1,
-        )
-        logger.info("\t+ Migrated account setting: {}".format(_account))
-    except Exception as e:
+        conn_iredapd.insert('greylisting',
+                            account=r.member,
+                            priority=_priority,
+                            sender='@.',
+                            sender_priority=0,
+                            active=1)
+        logger.info('\t+ Migrated account setting: %s' % _account)
+    except Exception, e:
         if str(e).startswith('duplicate key value'):
-            logger.info("\t[SKIP] Setting for account {} already exists.".format(_account))
+            logger.info('\t[SKIP] Setting for account %s already exists.' % _account)
         else:
-            logger.info("\t<<< ERROR >>> Error while migrating setting for account {}: {}".format(_account, repr(e)))
+            logger.info('\t<<< ERROR >>> Error while migrating setting for account %s: %s' % (_account, str(e)))
 
 #
 # Greylisting whitelists
@@ -145,8 +134,8 @@ for rcd in qr:
         if rcd.comment:
             comment = rcd.comment.title()
 
-        sql = """INSERT INTO greylisting_whitelists (account, sender, comment) VALUES ('@.', '{}', '{}');""".format(wl, comment)
+        sql = """INSERT INTO greylisting_whitelists (account, sender, comment) VALUES ('@.', '%s', '%s');""" % (wl, comment)
         try:
             conn_iredapd.query(sql)
-        except:
+        except Exception, e:
             pass

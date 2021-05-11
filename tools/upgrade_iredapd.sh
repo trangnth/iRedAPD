@@ -1,4 +1,5 @@
-#!/usr/bin/env bash # Author: Zhang Huangbin <zhb@iredmail.org>
+#!/usr/bin/env bash
+# Author: Zhang Huangbin <zhb@iredmail.org>
 # Purpose: Upgrade iRedAPD from old release.
 
 # USAGE:
@@ -13,18 +14,8 @@
 #       # cd /opt/iRedAPD-xxx/tools/
 #       # bash upgrade_iredapd.sh
 
-tmprootdir="$(dirname $0)"
-echo ${tmprootdir} | grep '^/' >/dev/null 2>&1
-if [ X"$?" == X"0" ]; then
-    export ROOTDIR="${tmprootdir}"
-else
-    export ROOTDIR="$(pwd)"
-fi
-
-export SYS_USER_ROOT='root'
-export SYS_GROUP_ROOT='root'
-export SYS_USER_SYSLOG='root'
-export SYS_GROUP_SYSLOG='root'
+export SYS_ROOT_USER='root'
+export SYS_ROOT_GROUP='root'
 
 export IREDAPD_DAEMON_USER='iredapd'
 export IREDAPD_DAEMON_GROUP='iredapd'
@@ -40,144 +31,69 @@ export KERNEL_NAME="$(uname -s | tr '[a-z]' '[A-Z]')"
 export RC_SCRIPT_NAME='iredapd'
 
 # Path to some programs.
-export CMD_PYTHON3='/usr/bin/python3'
-export CMD_PIP3='/usr/bin/pip3'
+export PYTHON_BIN='/usr/bin/python'
+export MD5_BIN='md5sum'
 
 if [ X"${KERNEL_NAME}" == X'LINUX' ]; then
     export DIR_RC_SCRIPTS='/etc/init.d'
-    export SYSLOG_CONF_DIR='/etc/rsyslog.d'
-    export LOGROTATE_DIR='/etc/logrotate.d'
-
     if [ -f /etc/redhat-release ]; then
         # RHEL/CentOS
         export DISTRO='RHEL'
+        export IREDADMIN_CONF_PY='/var/www/iredadmin/settings.py'
         export CRON_SPOOL_DIR='/var/spool/cron'
-
-        # Get an check relese version.
-        if grep 'release 7' /etc/redhat-release &>/dev/null; then
-            export DISTRO_VERSION='7'
-        elif grep 'release 8' /etc/redhat-release &>/dev/null; then
-            export DISTRO_VERSION='8'
-            export CMD_PIP3='/usr/bin/pip3.6'
-        else
-            export UNSUPPORTED_RELEASE="YES"
-        fi
-
-        for f in /var/www/iredadmin/settings.py /opt/www/iredadmin/settings.py; do
-            if [ -f ${f} ]; then
-                export IREDADMIN_CONF_PY="${f}"
-                break
-            fi
-        done
     elif [ -f /etc/lsb-release ]; then
         # Ubuntu
         export DISTRO='UBUNTU'
-
-        # Ubuntu version number and code name:
-        #   - 18.04: bionic
-        #   - 20.04: focal
-        export DISTRO_VERSION="$(awk -F'=' '/^DISTRIB_RELEASE/ {print $2}' /etc/lsb-release)"
-        export DISTRO_CODENAME="$(awk -F'=' '/^DISTRIB_CODENAME/ {print $2}' /etc/lsb-release)"
-
-        if echo "${DISTRO_VERSION}" | grep '^1[457]' &>/dev/null; then
-            echo "[ERROR] Your Ubuntu release ${DISTRO_VERSION} is too old and not supported."
-            exit 255
-        fi
-
-        # Syslog
-        export SYS_USER_SYSLOG='syslog'
-        export SYS_GROUP_SYSLOG='adm'
-
         if [ -f '/usr/share/apache2/iredadmin/settings.py' ]; then
             export IREDADMIN_CONF_PY='/usr/share/apache2/iredadmin/settings.py'
         elif [ -f '/opt/www/iredadmin/settings.py' ]; then
             export IREDADMIN_CONF_PY='/opt/www/iredadmin/settings.py'
         fi
         export CRON_SPOOL_DIR='/var/spool/cron/crontabs'
-
     elif [ -f /etc/debian_version ]; then
         # Debian
         export DISTRO='DEBIAN'
-
-        # Set distro code name and unsupported releases.
-        if grep -i '^10' /etc/debian_version &>/dev/null; then
-            export DISTRO_VERSION='10'
-        elif grep '^9' /etc/debian_version &>/dev/null || \
-            grep -i '^stretch' /etc/debian_version &>/dev/null; then
-            export DISTRO_VERSION='9'
-        else
-            export UNSUPPORTED_RELEASE="YES"
-        fi
-
-        # Syslog
-        export SYS_GROUP_SYSLOG='adm'
-
         if [ -f '/usr/share/apache2/iredadmin/settings.py' ]; then
             export IREDADMIN_CONF_PY='/usr/share/apache2/iredadmin/settings.py'
         elif [ -f '/opt/www/iredadmin/settings.py' ]; then
             export IREDADMIN_CONF_PY='/opt/www/iredadmin/settings.py'
         fi
         export CRON_SPOOL_DIR='/var/spool/cron/crontabs'
+    elif [ -f /etc/SuSE-release ]; then
+        # openSUSE
+        export DISTRO='SUSE'
+        export IREDADMIN_CONF_PY='/srv/www/iredadmin/settings.py'
+        export CRON_SPOOL_DIR='/var/spool/cron'
     else
-        export UNSUPPORTED_RELEASE="YES"
+        echo "<<< ERROR >>> Cannot detect Linux distribution name. Exit."
+        echo "Please contact support@iredmail.org to solve it."
+        exit 255
     fi
-
 elif [ X"${KERNEL_NAME}" == X'FREEBSD' ]; then
     export DISTRO='FREEBSD'
-    export SYS_GROUP_ROOT='wheel'
-    export SYS_GROUP_SYSLOG='wheel'
+    export SYS_ROOT_GROUP='wheel'
     export PGSQL_SYS_USER='pgsql'
-    export SYSLOG_CONF_DIR='/usr/local/etc/syslog.d'
-    export LOGROTATE_DIR='/usr/local/etc/newsyslog.conf.d'
     export DIR_RC_SCRIPTS='/usr/local/etc/rc.d'
     export IREDADMIN_CONF_PY='/usr/local/www/iredadmin/settings.py'
     export CRON_SPOOL_DIR='/var/cron/tabs'
-    export CMD_PYTHON3='/usr/local/bin/python3'
-    export CMD_PIP3='/usr/local/bin/pip3'
-
+    export PYTHON_BIN='/usr/local/bin/python'
+    export MD5_BIN='md5'
 elif [ X"${KERNEL_NAME}" == X'OPENBSD' ]; then
     export DISTRO='OPENBSD'
-    export DISTRO_VERSION="$(uname -r)"
-    export SYS_GROUP_ROOT='wheel'
-    export SYS_GROUP_SYSLOG='wheel'
+    export SYS_ROOT_GROUP='wheel'
     export PGSQL_SYS_USER='_postgresql'
     export DIR_RC_SCRIPTS='/etc/rc.d'
     export IREDADMIN_CONF_PY='/var/www/iredadmin/settings.py'
     export CRON_SPOOL_DIR='/var/cron/tabs'
-
-    if [ X"${DISTRO_VERSION}" == X'6.8' -o X"${DISTRO_VERSION}" == X'6.9' ]; then
-        export CMD_PYTHON3='/usr/local/bin/python3.8'
-        export CMD_PIP3='/usr/local/bin/pip3.8'
-    elif [ X"${DISTRO_VERSION}" == X'6.6' -o X"${DISTRO_VERSION}" == X'6.7' ]; then
-        export CMD_PYTHON3='/usr/local/bin/python3.7'
-        export CMD_PIP3='/usr/local/bin/pip3.7'
-    else
-        echo "Unsupported OpenBSD release: ${DISTRO_VERSION}. Abort."
-        exit 255
-    fi
+    export PYTHON_BIN='/usr/local/bin/python'
+    export MD5_BIN='md5'
 else
     echo "Cannot detect Linux/BSD distribution. Exit."
     echo "Please contact author iRedMail team <support@iredmail.org> to solve it."
     exit 255
 fi
 
-if [ X"${UNSUPPORTED_RELEASE}" == X'YES' ]; then
-    echo "Unsupported Linux/BSD distribution or release, abort."
-    exit 255
-fi
-
-if [ X"${KERNEL_NAME}" == X'OPENBSD' ]; then
-    export HOSTNAME="$(hostname)"
-
-    # Command used to genrate a random string.
-    # Usage: str="$(${RANDOM_STRING})"
-    export RANDOM_STRING='eval </dev/random tr -cd [:alnum:] | fold -w 32 | head -1'
-else
-    export HOSTNAME="$(hostname -f)"
-    export RANDOM_STRING='eval </dev/urandom tr -dc A-Za-z0-9 | (head -c $1 &>/dev/null || head -c 32)'
-fi
-
-export CRON_FILE_ROOT="${CRON_SPOOL_DIR}/${SYS_USER_ROOT}"
+export CRON_FILE_ROOT="${CRON_SPOOL_DIR}/${SYS_ROOT_USER}"
 
 # iRedAPD directory and config file.
 export IREDAPD_ROOT_DIR="/opt/iredapd"
@@ -208,22 +124,17 @@ get_iredapd_setting()
     echo "${value}"
 }
 
-install_pkgs()
+install_pkg()
 {
+    echo "Install package: $@"
+
     if [ X"${DISTRO}" == X'RHEL' ]; then
-        echo "Install packages: $@"
         yum -y install $@
     elif [ X"${DISTRO}" == X'DEBIAN' -o X"${DISTRO}" == X'UBUNTU' ]; then
-        echo "Install packages: $@"
         apt-get install -y --force-yes $@
     elif [ X"${DISTRO}" == X'FREEBSD' ]; then
-        for _port in $@; do
-            echo "Install package: ${_port}"
-            cd /usr/ports/${_port}
-            make USES=python:3.5+ install clean
-        done
+        cd /usr/ports/$@ && make install clean
     elif [ X"${DISTRO}" == X'OPENBSD' ]; then
-        echo "Install packages: $@"
         pkg_add -r $@
     else
         echo "<< ERROR >> Please install package(s) manually: $@"
@@ -233,7 +144,7 @@ install_pkgs()
 has_python_module()
 {
     for mod in $@; do
-        ${CMD_PYTHON3} -c "import $mod" &>/dev/null
+        python -c "import $mod" &>/dev/null
         if [ X"$?" == X'0' ]; then
             echo 'YES'
         else
@@ -241,6 +152,44 @@ has_python_module()
         fi
     done
 }
+
+# Check /root/.my.cnf. This will make sql related changes much simpler.
+if [ -f ${IREDAPD_CONF_PY} ]; then
+    if egrep '^backend.*(mysql|ldap)' ${IREDAPD_CONF_PY} &>/dev/null; then
+        if [ ! -f /root/.my.cnf ]; then
+            echo "<<< ERROR >>> File /root/.my.cnf not found."
+            echo "<<< ERROR >>> Please add mysql root user and password in it like below, then run this script again."
+            cat <<EOF
+
+[client]
+host=127.0.0.1
+port=3306
+user=root
+password="plain_password"
+
+EOF
+
+            exit 255
+        fi
+
+        # Check MySQL connection
+        mysql -e "SHOW DATABASES" &>/dev/null
+        if [ X"$?" != X'0' ]; then
+            echo "<<< ERROR >>> MySQL root user name or password is incorrect in /root/.my.cnf, please double check."
+            exit 255
+        fi
+    fi
+fi
+
+echo "* Detected Linux/BSD distribution: ${DISTRO}"
+
+if [ -L ${IREDAPD_ROOT_DIR} ]; then
+    export IREDAPD_ROOT_REAL_DIR="$(readlink ${IREDAPD_ROOT_DIR})"
+    echo "* Found iRedAPD directory: ${IREDAPD_ROOT_DIR}, symbol link of ${IREDAPD_ROOT_REAL_DIR}"
+else
+    echo "<<< ERROR >>> Directory is not a symbol link created by iRedMail. Exit."
+    exit 255
+fi
 
 add_missing_parameter()
 {
@@ -279,248 +228,7 @@ remove_parameter()
     unset var
 }
 
-# Check /root/.my.cnf. This will make sql related changes much simpler.
-if [ -f ${IREDAPD_CONF_PY} ]; then
-    if egrep '^backend.*(mysql|ldap)' ${IREDAPD_CONF_PY} &>/dev/null; then
-        if [ ! -f /root/.my.cnf ]; then
-            echo "<<< ERROR >>> File /root/.my.cnf not found."
-            echo "<<< ERROR >>> Please add mysql root user and password in it like below, then run this script again."
-            cat <<EOF
-
-[client]
-host=127.0.0.1
-port=3306
-user=root
-password="plain_password"
-
-EOF
-
-            exit 255
-        fi
-
-        # Check MySQL connection
-        mysql -e "SHOW DATABASES" &>/dev/null
-        if [ X"$?" != X'0' ]; then
-            echo "<<< ERROR >>> MySQL root user name or password is incorrect in /root/.my.cnf, please double check."
-            exit 255
-        fi
-    fi
-fi
-
-echo "* Detected Linux/BSD distribution: ${DISTRO}"
-
-#
-# Check dependent packages.
-#
-DEP_PKGS=""
-DEP_PIP3_MODS=""
-
-# Install python3.
-if [ ! -x ${CMD_PYTHON3} ]; then
-    if [ X"${DISTRO}" == X'RHEL' ]; then
-        [[ X"${DISTRO_VERSION}" == X'7' ]] && DEP_PKGS="${DEP_PKGS} python3 python3-pip"
-        [[ X"${DISTRO_VERSION}" == X'8' ]] && DEP_PKGS="${DEP_PKGS} python36 python3-pip"
-    fi
-
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3 python3-pip"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3 python3-pip"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} lang/python38 devel/py-pip"
-
-    if [ X"${DISTRO}" == X'OPENBSD' ]; then
-        if [ X"${DISTRO_VERSION}" == X'6.8' ]; then
-            DEP_PKGS="${DEP_PKGS} python%3.8"
-        elif [ X"${DISTRO_VERSION}" == X'6.6' -o X"${DISTRO_VERSION}" == X'6.7' ]; then
-            DEP_PKGS="${DEP_PKGS} python%3.7"
-        fi
-    fi
-fi
-
-if [ ! -x ${CMD_PIP3} ]; then
-    [ X"${DISTRO}" == X'RHEL' ] && DEP_PKGS="${DEP_PKGS} python3-pip"
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-pip"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-pip"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} devel/py-pip"
-    [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-pip"
-fi
-
-echo "* Checking dependent Python modules:"
-
-echo "  + [required] wheel"
-if [ X"$(has_python_module wheel)" == X'NO' ]; then
-    [ X"${DISTRO}" == X'RHEL' ] && DEP_PKGS="${DEP_PKGS} python3-wheel"
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-wheel"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-wheel"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} devel/py-wheel"
-    [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-wheel"
-fi
-
-echo "  + [required] sqlalchemy"
-if [ X"$(has_python_module sqlalchemy)" == X'NO' ]; then
-    if [ X"${DISTRO}" == X'RHEL' ]; then
-        [[ X"${DISTRO_VERSION}" == X'7' ]] && DEP_PKGS="${DEP_PKGS} python36-sqlalchemy"
-        [[ X"${DISTRO_VERSION}" == X'8' ]] && DEP_PKGS="${DEP_PKGS} python3-sqlalchemy"
-    fi
-
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-sqlalchemy"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-sqlalchemy"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} databases/py-sqlalchemy"
-    [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-sqlalchemy"
-fi
-
-echo "  + [required] dnspython"
-if [ X"$(has_python_module dns)" == X'NO' ]; then
-    if [ X"${DISTRO}" == X'RHEL' ]; then
-        [ X"${DISTRO_VERSION}" == X'7' ] && DEP_PKGS="${DEP_PKGS} python36-dns"
-        [ X"${DISTRO_VERSION}" == X'8' ] && DEP_PKGS="${DEP_PKGS} python3-dns"
-    fi
-
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-dnspython"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-dnspython"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} dns/py-dnspython"
-    [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-dnspython"
-fi
-
-echo "  + [required] requests"
-if [ X"$(has_python_module requests)" == X'NO' ]; then
-    if [ X"${DISTRO}" == X'RHEL' ]; then
-        [ X"${DISTRO_VERSION}" == X'7' ] && DEP_PKGS="${DEP_PKGS} python36-requests"
-        [ X"${DISTRO_VERSION}" == X'8' ] && DEP_PKGS="${DEP_PKGS} python3-requests"
-    fi
-
-    [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-requests"
-    [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-requests"
-    [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} dns/py-requests"
-    [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-requests"
-fi
-
-echo "  + [required] web.py"
-if [ X"$(has_python_module web)" == X'NO' ]; then
-    DEP_PIP3_MODS="${DEP_PIP3_MODS} web.py>=0.61"
-fi
-
-if grep '^backend' ${IREDAPD_CONF_PY} | grep 'ldap' &>/dev/null; then
-    # LDAP backend
-    export IREDMAIL_BACKEND='OPENLDAP'
-
-    if [ X"$(has_python_module ldap)" == X'NO' ]; then
-        if [ X"${DISTRO}" == X'RHEL' ]; then
-            if [ X"${DISTRO_VERSION}" == X'7' ]; then
-                DEP_PKGS="${DEP_PKGS} python36-PyMySQL gcc python3-devel openldap-devel"
-                DEP_PIP3_MODS="${DEP_PIP3_MODS} python-ldap==3.3.1"
-            else
-                DEP_PKGS="${DEP_PKGS} python3-ldap python3-PyMySQL"
-            fi
-
-        elif [ X"${DISTRO}" == X'DEBIAN' ]; then
-            DEP_PKGS="${DEP_PKGS} python3-pymysql"
-
-            if [ X"${DISTRO_VERSION}" == X'9' ]; then
-                DEP_PKGS="${DEP_PKGS} python3-pyldap"
-            else
-                DEP_PKGS="${DEP_PKGS} python3-ldap"
-            fi
-        fi
-
-        [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-ldap python3-pymysql"
-        [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} net/py-ldap databases/py-pymysql"
-        [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-ldap py3-mysqlclient"
-    fi
-
-elif grep '^backend' ${IREDAPD_CONF_PY} | grep 'mysql' &>/dev/null; then
-    # MySQL/MariaDB backend
-    export IREDMAIL_BACKEND='MYSQL'
-
-    if [ X"$(has_python_module pymysql)" == X'NO' ]; then
-        if [ X"${DISTRO}" == X'RHEL' ]; then
-            if [ X"${DISTRO_VERSION}" == X'7' ]; then
-                DEP_PKGS="${DEP_PKGS} python36-PyMySQL"
-            else
-                DEP_PKGS="${DEP_PKGS} python3-PyMySQL"
-            fi
-        fi
-
-        [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-pymysql"
-        [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-pymysql"
-        [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} databases/py-pymysql"
-        if [ X"${DISTRO}" == X'OPENBSD' ]; then
-            if [ X"${DISTRO_VERSION}" == X'6.8' ]; then
-                DEP_PKGS="${DEP_PKGS} py3-pymysql"
-            fi
-        fi
-    fi
-
-    if [ X"${DISTRO}" == X'OPENBSD' ]; then
-        if [ X"${DISTRO_VERSION}" == X'6.6' -o X"${DISTRO_VERSION}" == X'6.7' ]; then
-            if [ X"$(has_python_module MySQLdb)" == X'NO' ]; then
-                DEP_PKGS="${DEP_PKGS} py3-mysqlclient"
-            fi
-        fi
-    fi
-
-elif grep '^backend' ${IREDAPD_CONF_PY} | grep 'pgsql' &>/dev/null; then
-    # PostgreSQL backend
-    export IREDMAIL_BACKEND='PGSQL'
-
-    if [ X"$(has_python_module psycopg2)" == X'NO' ]; then
-        if [ X"${DISTRO}" == X'RHEL' ]; then
-            if [ X"${DISTRO_VERSION}" == X'7' ]; then
-                DEP_PKGS="${DEP_PKGS} python36-psycopg2"
-            else
-                DEP_PKGS="${DEP_PKGS} python3-psycopg2"
-            fi
-        fi
-
-        [ X"${DISTRO}" == X'DEBIAN' ]   && DEP_PKGS="${DEP_PKGS} python3-psycopg2"
-        [ X"${DISTRO}" == X'UBUNTU' ]   && DEP_PKGS="${DEP_PKGS} python3-psycopg2"
-        [ X"${DISTRO}" == X'FREEBSD' ]  && DEP_PKGS="${DEP_PKGS} databases/py-psycopg2"
-        [ X"${DISTRO}" == X'OPENBSD' ]  && DEP_PKGS="${DEP_PKGS} py3-psycopg2"
-    fi
-fi
-
-if [ X"${DEP_PKGS}" != X'' ]; then
-    install_pkgs ${DEP_PKGS}
-fi
-
-if [ X"${DEP_PIP3_MODS}" != X'' ]; then
-    ${CMD_PIP3} install -U ${DEP_PIP3_MODS}
-fi
-
-# Re-check py3 and create symbol link.
-if [ X"${DISTRO}" == X'OPENBSD' ]; then
-    for v in 3.8 3.7; do
-        if [ -x /usr/local/bin/python${v} ]; then
-            ln -sf /usr/local/bin/python${v} /usr/local/bin/python3
-            break
-        fi
-    done
-
-    for v in 3.8 3.7; do
-        if [ -x /usr/local/bin/pip${v} ]; then
-            ln -sf /usr/local/bin/pip${v} /usr/local/bin/pip3
-            break
-        fi
-    done
-fi
-
-if [ ! -x ${CMD_PYTHON3} ]; then
-    echo "<<< ERROR >>> Failed to install Python 3, please install it manually."
-    exit 255
-fi
-
-if [ ! -x ${CMD_PIP3} ]; then
-    echo "<<< ERROR >>> Failed to install pip for Python 3, please install it manually."
-    exit 255
-fi
-
-if [ -L ${IREDAPD_ROOT_DIR} ]; then
-    export IREDAPD_ROOT_REAL_DIR="$(readlink ${IREDAPD_ROOT_DIR})"
-    echo "* Found iRedAPD directory: ${IREDAPD_ROOT_DIR}, symbol link of ${IREDAPD_ROOT_REAL_DIR}"
-else
-    echo "<<< ERROR >>> Directory is not a symbol link created by iRedMail. Exit."
-    exit 255
-fi
-
-# Detect config file
+# Copy config file
 if [ -f ${IREDAPD_CONF_PY} ]; then
     echo "* Found iRedAPD config file: ${IREDAPD_CONF_PY}"
 elif [ -f ${IREDAPD_CONF_INI} ]; then
@@ -533,13 +241,14 @@ else
 fi
 
 # Check whether current directory is iRedAPD
-if ! echo ${ROOTDIR} | grep 'iRedAPD.*/tools' >/dev/null; then
+export PWD="$(pwd)"
+if ! echo ${PWD} | grep 'iRedAPD.*/tools' >/dev/null; then
     echo "<<< ERROR >>> Cannot find new version of iRedAPD in current directory. Exit."
     exit 255
 fi
 
 mkdir /tmp/iredapd/ 2>/dev/null
-cp -f ${ROOTDIR}/../SQL/*sql /tmp/iredapd
+cp -f ${PWD}/../SQL/*sql /tmp/iredapd
 chmod -R 0555 /tmp/iredapd
 
 #
@@ -549,10 +258,10 @@ export IREDAPD_DB_NAME='iredapd'
 if ! grep '^iredapd_db_' ${IREDAPD_CONF_PY} &>/dev/null; then
     export IREDAPD_DB_SERVER='127.0.0.1'
     export IREDAPD_DB_USER='iredapd'
-    export IREDAPD_DB_PASSWD="$(${RANDOM_STRING})"
+    export IREDAPD_DB_PASSWD="$(echo $RANDOM | ${MD5_BIN} | awk '{print $1}')"
 
     mkdir /tmp/iredapd/ 2>/dev/null
-    cp -f ${ROOTDIR}/../SQL/*sql /tmp/iredapd
+    cp -f ${PWD}/../SQL/*sql /tmp/iredapd
     chmod -R 0555 /tmp/iredapd
 
     # Check backend.
@@ -626,77 +335,25 @@ psql_conn="psql -h ${iredapd_db_server} \
                 -U ${iredapd_db_user} \
                 -d ${iredapd_db_name}"
 
-update_sql_based_on_missing_column() {
-    # Usage: update_sql_based_on_missing_column <table> <column> <sql-file>
-
-    _table="${1}"
-    _column="${2}"
-    _file="${ROOTDIR}/../SQL/update/${3}"
-
-    if [[ ! -f ${_file} ]]; then
-        echo "File ${_file} does not exist. Abort."
-        exit 255
-    fi
-
-    if [ X"${IREDMAIL_BACKEND}" == X"OPENLDAP" -o X"${IREDMAIL_BACKEND}" == X'MYSQL' ]; then
-        (${mysql_conn} <<EOF
-DESC ${_table};
-EOF
-) | grep "\<${_column}\>" &>/dev/null
-
-        if [ X"$?" != X'0' ]; then
-            ${mysql_conn}  < ${_file}
-        fi
-    elif [ X"${IREDMAIL_BACKEND}" == X"PGSQL" ]; then
-        ${psql_conn} -c "\d+ ${_table}" | grep "\<${_column}\>" &>/dev/null
-
-        if [ X"$?" != X'0' ]; then
-            cp ${_file} /tmp/iredapd.pgsql
-            chmod 0555 /tmp/iredapd.pgsql
-            ${psql_conn} -c "\i /tmp/iredapd.pgsql;"
-            rm -f /tmp/iredapd.pgsql
-        fi
-    fi
-}
-
-add_new_pgsql_tables() {
-    # Usage: add_new_pgsql_tables <sql-file-name> "SELECT ..."
-
-    # name of SQL file under SQL/update/
-    sql_file="$1"
-    shift 1
-
-    # SQL statement used to verify whether it's necessary to import the SQL file.
-    sql_statement="$@"
-
-    ${psql_conn} -c "${sql_statement}" &>/dev/null
-
-    if [ X"$?" != X'0' ]; then
-        cp ${ROOTDIR}/../SQL/update/${sql_file} /tmp/
-        chmod 0555 /tmp/${sql_file}
-        ${psql_conn} -c "\i /tmp/${sql_file}"
-        rm -f /tmp/${sql_file}
-    fi
-}
-
-
 if egrep '^backend.*(mysql|ldap)' ${IREDAPD_CONF_PY} &>/dev/null; then
-    cp -f ${ROOTDIR}/../SQL/iredapd.mysql /tmp/
-
-    existing_sql_tables="$(${mysql_conn} -e "show tables")"
-
-    echo "* Add new SQL tables - if there's any"
-    ${mysql_conn} -e "SOURCE /tmp/iredapd.mysql"
+    cp -f ${PWD}/../SQL/iredapd.mysql /tmp/
 
     #
     # `greylisting_whitelist_domains`
     #
-    echo "${existing_sql_tables}" | grep '\<greylisting_whitelist_domains\>' &>/dev/null
+    (${mysql_conn} <<EOF
+show tables;
+EOF
+) | grep 'greylisting_whitelist_domains' &>/dev/null
+
     if [ X"$?" != X'0' ]; then
-        cp -f ${ROOTDIR}/../SQL/greylisting_whitelist_domains.sql /tmp/
+        cp -f ${PWD}/../SQL/greylisting_whitelist_domains.sql /tmp/
         chmod 0555 /tmp/greylisting_whitelist_domains.sql
-        ${mysql_conn} -e "SOURCE /tmp/greylisting_whitelist_domains.sql"
-        rm -f /tmp/greylisting_whitelist_domains.sql &>/dev/null
+
+        ${mysql_conn} <<EOF
+SOURCE /tmp/iredapd.mysql;
+SOURCE /tmp/greylisting_whitelist_domains.sql;
+EOF
     fi
 
     #
@@ -721,31 +378,105 @@ EOF
     fi
 
     #
-    # `wblist_rdns`
+    # `greylisting_whitelist_domain_spf`
     #
-    echo "${existing_sql_tables}" | grep '\<wblist_rdns\>' &>/dev/null
+    (${mysql_conn} <<EOF
+show tables;
+EOF
+) | grep 'greylisting_whitelist_domain_spf' &>/dev/null
+
     if [ X"$?" != X'0' ]; then
-        cp -f ${ROOTDIR}/../SQL/wblist_rdns.sql /tmp/
-        chmod 0555 /tmp/wblist_rdns.sql
-        ${mysql_conn} -e "SOURCE /tmp/wblist_rdns.sql"
-        rm -f /tmp/wblist_rdns.sql &>/dev/null
+        ${mysql_conn} <<EOF
+SOURCE /tmp/iredapd.mysql;
+EOF
     fi
 
-    # iRedAPD-2.3: new column `throttle_tracking.last_notify_time`
-    update_sql_based_on_missing_column throttle_tracking last_notify_time 2.3-last_notify_time.mysql
+    #
+    # `wblist_rdns`
+    #
+    (${mysql_conn} <<EOF
+show tables;
+EOF
+) | grep 'wblist_rdns' &>/dev/null
 
-    # iRedAPD-5.0: new column `throttle.max_rcpts`
-    update_sql_based_on_missing_column throttle max_rcpts 5.0-max_rcpts.mysql
+    if [ X"$?" != X'0' ]; then
+        cp -f ${PWD}/../SQL/wblist_rdns.sql /tmp/
+        chmod 0555 /tmp/wblist_rdns.sql
+
+        ${mysql_conn} <<EOF
+SOURCE /tmp/iredapd.mysql;
+SOURCE /tmp/wblist_rdns.sql;
+EOF
+    fi
 
 elif egrep '^backend.*pgsql' ${IREDAPD_CONF_PY} &>/dev/null; then
     export PGPASSWORD="${iredapd_db_password}"
 
-    # v1.8: greylisting_whitelist_domains
-    add_new_pgsql_tables 1.8-greylisting_whitelist_domains.pgsql "SELECT id FROM greylisting_whitelist_domains LIMIT 1"
+    #
+    # `greylisting_whitelist_domains`
+    #
+    ${psql_conn} -c "SELECT id FROM greylisting_whitelist_domains LIMIT 1" &>/dev/null
 
-    # v2.1: `greylisting_whitelist_domain_spf`, `wblist_rdns`
-    add_new_pgsql_tables 2.1-greylisting_whitelist_domain_spf.pgsql "SELECT id FROM greylisting_whitelist_domain_spf LIMIT 1"
-    add_new_pgsql_tables 2.1-wblist_rdns.pgsql "SELECT id FROM wblist_rdns LIMIT 1"
+    if [ X"$?" != X'0' ]; then
+        cp -f ${PWD}/../SQL/greylisting_whitelist_domains.sql /tmp/
+        chmod 0555 /tmp/greylisting_whitelist_domains.sql
+
+        ${psql_conn} -c "
+CREATE TABLE greylisting_whitelist_domains (
+    id      SERIAL PRIMARY KEY,
+    domain  VARCHAR(255) NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX idx_greylisting_whitelist_domains_domain ON greylisting_whitelist_domains (domain);
+\i /tmp/greylisting_whitelist_domains.sql;
+"
+
+        rm -f /tmp/greylisting_whitelist_domains.sql &>/dev/null
+    fi
+
+    #
+    # `greylisting_whitelist_domain_spf`
+    #
+    ${psql_conn} -c "SELECT id FROM greylisting_whitelist_domain_spf LIMIT 1" &>/dev/null
+
+    if [ X"$?" != X'0' ]; then
+        ${psql_conn} -c "
+CREATE TABLE greylisting_whitelist_domain_spf (
+    id      SERIAL PRIMARY KEY,
+    account VARCHAR(255)    NOT NULL DEFAULT '',
+    sender  VARCHAR(255)    NOT NULL DEFAULT '',
+    comment VARCHAR(255) NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX idx_greylisting_whitelist_domain_spf_account_sender ON greylisting_whitelist_domain_spf (account, sender);
+CREATE INDEX idx_greylisting_whitelist_domain_spf_comment ON greylisting_whitelist_domain_spf (comment);
+"
+    fi
+
+    #
+    # `wblist_rdns`
+    #
+    ${psql_conn} -c "SELECT id FROM wblist_rdns LIMIT 1" &>/dev/null
+
+    if [ X"$?" != X'0' ]; then
+        cp -f ${PWD}/../SQL/wblist_rdns.sql /tmp/
+        chmod 0555 /tmp/wblist_rdns.sql
+
+        ${psql_conn} <<EOF
+CREATE TABLE wblist_rdns (
+    id      SERIAL PRIMARY KEY,
+    -- reverse DNS name of sender IP address
+    rdns    VARCHAR(255) NOT NULL DEFAULT '',
+    -- W=whitelist, B=blacklist
+    wb      VARCHAR(10) NOT NULL DEFAULT 'B'
+);
+CREATE UNIQUE INDEX idx_wblist_rdns_rdns ON wblist_rdns (rdns);
+CREATE INDEX idx_wblist_rdns_wb ON wblist_rdns (wb);
+\i /tmp/wblist_rdns.sql;
+EOF
+
+        rm -f /tmp/wblist_rdns.sql &>/dev/null
+    fi
 
     #
     # INDEX on `greylisting_tracking`: (client_address, passed)
@@ -755,26 +486,36 @@ elif egrep '^backend.*pgsql' ${IREDAPD_CONF_PY} &>/dev/null; then
     if [ X"$?" != X'0' ]; then
         ${psql_conn} -c "CREATE INDEX idx_greylisting_tracking_client_address_passed ON greylisting_tracking (client_address, passed);"
     fi
-
-    # v2.3: new column `throttle_tracking.last_notify_time`
-    update_sql_based_on_missing_column throttle_tracking last_notify_time 2.3-last_notify_time.pgsql
-
-    # v2.5: new table: `srs_exclude_domains`
-    add_new_pgsql_tables 2.5-srs_exclude_domains.pgsql "SELECT id FROM srs_exclude_domains LIMIT 1"
-
-    # v3.2: new tables: `senderscore_cache`, `smtp_sessions`
-    add_new_pgsql_tables 3.2-senderscore_cache.pgsql "SELECT client_address FROM senderscore_cache LIMIT 1"
-    add_new_pgsql_tables 3.2-smtp_sessions.pgsql "SELECT client_address FROM smtp_sessions LIMIT 1"
-
-    # v5.0: new column: `throttle.max_rcpts`.
-    update_sql_based_on_missing_column throttle max_rcpts 5.0-max_rcpts.pgsql
 fi
+
+#
+# Check dependent packages. Prompt to install missed ones manually.
+#
+echo "* Checking dependent Python modules:"
+echo "  + [required] python-sqlalchemy"
+if [ X"$(has_python_module sqlalchemy)" == X'NO' ]; then
+    [ X"${DISTRO}" == X'RHEL' ]     && install_pkg python-sqlalchemy
+    [ X"${DISTRO}" == X'DEBIAN' ]   && install_pkg python-sqlalchemy
+    [ X"${DISTRO}" == X'UBUNTU' ]   && install_pkg python-sqlalchemy
+    [ X"${DISTRO}" == X'FREEBSD' ]  && install_pkg databases/py-sqlalchemy
+    [ X"${DISTRO}" == X'OPENBSD' ]  && install_pkg py-sqlalchemy
+fi
+
+echo "  + [required] dnspython"
+if [ X"$(has_python_module dns)" == X'NO' ]; then
+    [ X"${DISTRO}" == X'RHEL' ]     && install_pkg python-dns
+    [ X"${DISTRO}" == X'DEBIAN' ]   && install_pkg python-dnspython
+    [ X"${DISTRO}" == X'UBUNTU' ]   && install_pkg python-dnspython
+    [ X"${DISTRO}" == X'FREEBSD' ]  && install_pkg dns/py-dnspython
+    [ X"${DISTRO}" == X'OPENBSD' ]  && install_pkg py-dnspython
+fi
+
 
 #
 # Upgrade to new version
 #
 # Copy current directory to web DocumentRoot
-dir_new_version="$(dirname ${ROOTDIR})"
+dir_new_version="$(dirname ${PWD})"
 name_new_version="$(basename ${dir_new_version})"
 NEW_IREDAPD_ROOT_DIR="/opt/${name_new_version}"
 NEW_IREDAPD_CONF="${NEW_IREDAPD_ROOT_DIR}/settings.py"
@@ -811,27 +552,8 @@ EOF
     mv ${NEW_IREDAPD_CONF}_tmp ${NEW_IREDAPD_CONF}
 fi
 
-# Set correct SQL driver for SQLAlchemy. Defaults to `MySQLdb`.
-if [ X"${IREDMAIL_BACKEND}" == X"OPENLDAP" -o X"${IREDMAIL_BACKEND}" == X'MYSQL' ]; then
-    # OpenBSD 6.7 and earlier releases doesn't have binary package `py3-pymysql`.
-    if [ X"${DISTRO}" == X'OPENBSD' ]; then
-        if [ X"${DISTRO_VERSION}" == X'6.8' ]; then
-            export SQL_DB_DRIVER='pymysql'
-        fi
-    else
-        export SQL_DB_DRIVER='pymysql'
-    fi
-
-    if [ X"${SQL_DB_DRIVER}" != X'' ]; then
-        if ! grep '^SQL_DB_DRIVER' ${NEW_IREDAPD_CONF} &>/dev/null; then
-            echo "" >> ${NEW_IREDAPD_CONF}
-            echo "SQL_DB_DRIVER = '${SQL_DB_DRIVER}'" >> ${NEW_IREDAPD_CONF}
-        fi
-    fi
-fi
-
-echo "* Set correct owner and permission for ${NEW_IREDAPD_ROOT_DIR}: ${SYS_USER_ROOT}:${SYS_GROUP_ROOT}, 0500."
-chown -R ${SYS_USER_ROOT}:${SYS_GROUP_ROOT} ${NEW_IREDAPD_ROOT_DIR}
+echo "* Set correct owner and permission for ${NEW_IREDAPD_ROOT_DIR}: ${SYS_ROOT_USER}:${SYS_ROOT_GROUP}, 0500."
+chown -R ${SYS_ROOT_USER}:${SYS_ROOT_GROUP} ${NEW_IREDAPD_ROOT_DIR}
 chmod -R 0500 ${NEW_IREDAPD_ROOT_DIR}
 
 echo "* Set permission for iRedAPD config file: ${NEW_IREDAPD_CONF} -> 0400."
@@ -845,7 +567,6 @@ export USE_SYSTEMD='NO'
 if which systemctl &>/dev/null; then
     export USE_SYSTEMD='YES'
     export SYSTEMD_SERVICE_DIR='/lib/systemd/system'
-    export SYSTEMD_SERVICE_DIR2='/etc/systemd/system'
     export SYSTEMD_SERVICE_USER_DIR='/etc/systemd/system/multi-user.target.wants/'
 fi
 
@@ -865,14 +586,10 @@ if [ -f "${DIR_RC_SCRIPTS}/iredapd" ]; then
     chmod 0755 ${DIR_RC_SCRIPTS}/iredapd
 else
     if [ X"${USE_SYSTEMD}" == X'YES' ]; then
-        echo "* Remove existing systemd service files."
-        rm -f ${SYSTEMD_SERVICE_DIR}/iredapd.service &>/dev/null
-        rm -f ${SYSTEMD_SERVICE_DIR2}/iredapd.service &>/dev/null
-        rm -f ${SYSTEMD_SERVICE_USER_DIR}/iredapd.service &>/dev/null
-
-        echo "* Copy systemd service file: ${IREDAPD_ROOT_DIR}/rc_scripts/iredapd.service -> ${SYSTEMD_SERVICE_DIR}/iredapd.service."
-        cp -f ${IREDAPD_ROOT_DIR}/rc_scripts/iredapd.service ${SYSTEMD_SERVICE_DIR}/iredapd.service
-        chmod -R 0644 ${SYSTEMD_SERVICE_DIR}/iredapd.service
+        echo "* Create symbol link: ${IREDAPD_ROOT_DIR}/rc_scripts/iredapd.service -> ${SYSTEMD_SERVICE_DIR}/iredapd.service."
+        rm -f ${SYSTEMD_SERVICE_DIR}/iredapd.service ${SYSTEMD_SERVICE_USER_DIR}/iredapd.service &>/dev/null
+        ln -s ${IREDAPD_ROOT_DIR}/rc_scripts/iredapd.service ${SYSTEMD_SERVICE_DIR}/iredapd.service
+        chmod -R 0640 ${IREDAPD_ROOT_DIR}/rc_scripts/iredapd.service
         systemctl daemon-reload &>/dev/null
         systemctl enable iredapd.service >/dev/null
     fi
@@ -888,10 +605,6 @@ systemctl daemon-reload &>/dev/null
 #
 # Add missing parameters or rename old parameter names."
 #
-if ! grep '^ldap_enable_tls' ${NEW_IREDAPD_CONF} &>/dev/null; then
-    add_missing_parameter 'ldap_enable_tls' 'False'
-fi
-
 # Get Amavisd related settings from iRedAdmin config file.
 if ! grep '^amavisd_db_' ${NEW_IREDAPD_CONF} &>/dev/null; then
     echo "* Add missing parameters used for plugin 'amavisd_wblist'."
@@ -919,31 +632,6 @@ if ! grep '^iredapd_db_' ${NEW_IREDAPD_CONF} &>/dev/null; then
     add_missing_parameter 'iredapd_db_password' "${IREDAPD_DB_PASSWD}"
 fi
 
-# SRS parameters
-if ! grep '^srs_' ${NEW_IREDAPD_CONF} &>/dev/null; then
-    # Add required settings.
-    add_missing_parameter 'srs_forward_port' "7778"
-    add_missing_parameter 'srs_reverse_port' "7779"
-    add_missing_parameter 'srs_domain' "${HOSTNAME}"
-    add_missing_parameter 'srs_secrets' "['$(${RANDOM_STRING})']"
-fi
-
-# mlmmjadmin integration.
-if ! grep '^mlmmjadmin_' ${NEW_IREDAPD_CONF} &>/dev/null; then
-    add_missing_parameter 'mlmmjadmin_api_endpoint' "http://127.0.0.1:7790/api"
-
-    # Get api token from mlmmjadmin config file.
-    token=$(grep '^api_auth_tokens' /opt/mlmmjadmin/settings.py | awk -F"[=\']" '{print $3}' | tr -d '\n')
-    add_missing_parameter 'mlmmjadmin_api_auth_token' "${token}"
-fi
-
-# On FreeBSD, syslog socket is /var/run/log.
-if [ X"${KERNEL_NAME}" == X'FREEBSD' ]; then
-    if ! grep '^SYSLOG_SERVER' ${NEW_IREDAPD_CONF} &>/dev/null; then
-        add_missing_parameter 'SYSLOG_SERVER' "/var/run/log"
-    fi
-fi
-
 # replace old parameter names: sql_[XX] -> vmail_db_[XX]
 if grep '^sql_server' ${IREDAPD_CONF_PY} &>/dev/null; then
     perl -pi -e 's#^(sql_db)#vmail_db_name#g' ${IREDAPD_CONF_PY}
@@ -960,13 +648,19 @@ remove_parameter 'iredadmin_db_name'
 remove_parameter 'iredadmin_db_user'
 remove_parameter 'iredadmin_db_password'
 
-# Remove deprecated plugins.
+#------------------------------
+# Remove old plugins
+#
+echo "* Remove deprecated plugins."
 rm -f ${IREDAPD_ROOT_DIR}/plugins/ldap_amavisd_block_blacklisted_senders.py &>/dev/null
 rm -f ${IREDAPD_ROOT_DIR}/plugins/ldap_recipient_restrictions.py &>/dev/null
 rm -f ${IREDAPD_ROOT_DIR}/plugins/sql_user_restrictions.py &>/dev/null
 rm -f ${IREDAPD_ROOT_DIR}/plugins/amavisd_message_size_limit.py &>/dev/null
 
+#------------------------------
 # Rename old plugins
+#
+echo "* Rename old plugins."
 perl -pi -e 's#sql_force_change_password_in_days#sql_force_change_password#g' ${IREDAPD_CONF_PY}
 perl -pi -e 's#ldap_force_change_password_in_days#ldap_force_change_password#g' ${IREDAPD_CONF_PY}
 
@@ -981,53 +675,17 @@ fi
 
 # Move old log files to log directory.
 mv /var/log/iredapd.log* ${IREDAPD_LOG_DIR} &>/dev/null
-touch ${IREDAPD_LOG_FILE}
 
 # Always set correct owner and permission, so that we can rotate the log files.
-chown -R ${SYS_USER_SYSLOG}:${SYS_GROUP_SYSLOG} ${IREDAPD_LOG_DIR}
-chmod -R 0750 ${IREDAPD_LOG_DIR}
+chown -R ${IREDAPD_DAEMON_USER}:${IREDAPD_DAEMON_GROUP} ${IREDAPD_LOG_DIR}
+chmod -R 0700 ${IREDAPD_LOG_DIR}
 
-# syslog and log rotation
-if [ X"${KERNEL_NAME}" == X'LINUX' ]; then
-    # rsyslog
-    cp -f ${ROOTDIR}/../samples/rsyslog.d/iredapd.conf ${SYSLOG_CONF_DIR}/1-iredmail-iredapd.conf
-    chown ${SYS_USER_ROOT}:${SYS_GROUP_ROOT} ${SYSLOG_CONF_DIR}/1-iredmail-iredapd.conf
-    chmod 0644 ${SYSLOG_CONF_DIR}/1-iredmail-iredapd.conf
-    service rsyslog restart >/dev/null
+# Always reset log file.
+perl -pi -e 's#^(log_file).*#${1} = "$ENV{IREDAPD_LOG_FILE}"#' ${IREDAPD_CONF_PY}
 
-    # log rotation
-    cp -f ${ROOTDIR}/../samples/logrotate.d/iredapd ${LOGROTATE_DIR}/iredapd
-    chmod 0644 ${LOGROTATE_DIR}/iredapd
-
-    if [ -x /sbin/service ]; then
-        perl -pi -e 's#/usr/sbin/service#/sbin/service#g' ${LOGROTATE_DIR}/iredapd
-    fi
-elif [ X"${KERNEL_NAME}" == X'FREEBSD' ]; then
-    # syslog
-    [[ -d ${SYSLOG_CONF_DIR} ]] || mkdir -p ${SYSLOG_CONF_DIR}
-    cp -f ${ROOTDIR}/../samples/freebsd/syslog.d/iredapd.conf ${SYSLOG_CONF_DIR}/iredapd.conf
-    chown ${SYS_USER_ROOT}:${SYS_GROUP_ROOT} ${SYSLOG_CONF_DIR}/iredapd.conf
-    chmod 0644 ${SYSLOG_CONF_DIR}/iredapd.conf
-    service syslogd restart >/dev/null
-
-    # log rotation
-    cp -f ${ROOTDIR}/../samples/freebsd/newsyslog.d/iredapd ${LOGROTATE_DIR}/iredapd
-    chmod 0644 ${LOGROTATE_DIR}/iredapd
-elif [ X"${KERNEL_NAME}" == X'OPENBSD' ]; then
-    if ! grep "${IREDAPD_LOG_FILE}" /etc/syslog.conf &>/dev/null; then
-        # '!!' means abort further evaluation after first match
-        echo '' >> /etc/syslog.conf
-        echo '!!iredapd' >> /etc/syslog.conf
-        echo "local5.*        ${IREDAPD_LOG_FILE}" >> /etc/syslog.conf
-    fi
-
-    if ! grep "${IREDAPD_LOG_FILE}" /etc/newsyslog.conf &>/dev/null; then
-        cat >> /etc/newsyslog.conf <<EOF
-${IREDAPD_LOG_FILE}    ${SYS_USER_SYSLOG}:${SYS_GROUP_SYSLOG}   600  7     *    24    Z
-EOF
-    fi
-fi
-
+# Remove old logrotate config file.
+# Linux
+[ -f /etc/logrotate.d/iredapd ] && rm -f /etc/logrotate.d/iredapd
 # FreeBSD & OpenBSD
 [ -f /etc/newsyslog.conf ] && perl -pi -e 's|^(/var/log/iredapd.log.)|#${1}|' /etc/newsyslog.conf
 
@@ -1046,33 +704,24 @@ fi
 if ! grep '/opt/iredapd/tools/cleanup_db.py' ${CRON_FILE_ROOT} &>/dev/null; then
     cat >> ${CRON_FILE_ROOT} <<EOF
 # iRedAPD: Clean up expired tracking records hourly.
-1   *   *   *   *   ${CMD_PYTHON3} ${IREDAPD_ROOT_DIR}/tools/cleanup_db.py &>/dev/null
+1   *   *   *   *   ${PYTHON_BIN} ${IREDAPD_ROOT_DIR}/tools/cleanup_db.py &>/dev/null
 EOF
 fi
 
 # cron job for updating IP addresses/networks of greylisting whitelist domains.
-#if ! grep 'spf_to_greylist_whitelists.py' ${CRON_FILE_ROOT} &>/dev/null; then
-#    cat >> ${CRON_FILE_ROOT} <<EOF
-## iRedAPD: Convert specified SPF DNS record of specified domain names to IP
-##          addresses/networks every 10 minutes.
-#*/30   *   *   *   *   ${CMD_PYTHON3} ${IREDAPD_ROOT_DIR}/tools/spf_to_greylist_whitelists.py &>/dev/null
-#EOF
-#fi
+if ! grep 'spf_to_greylist_whitelists.py' ${CRON_FILE_ROOT} &>/dev/null; then
+    cat >> ${CRON_FILE_ROOT} <<EOF
+# iRedAPD: Convert specified SPF DNS record of specified domain names to IP
+#          addresses/networks every 10 minutes.
+*/30   *   *   *   *   ${PYTHON_BIN} ${IREDAPD_ROOT_DIR}/tools/spf_to_greylist_whitelists.py &>/dev/null
+EOF
+fi
 
-echo "* Replace py2 by py3 in cron jobs."
-perl -pi -e 's#(.*) python (.*/opt/iredapd/tools/.*)#${1} $ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
-perl -pi -e 's#(.*) python2 (.*/opt/iredapd/tools/.*)#${1} $ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
-perl -pi -e 's#(.*)/usr/bin/python (.*/opt/iredapd/tools/.*)#${1}$ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
-perl -pi -e 's#(.*)/usr/bin/python2 (.*/opt/iredapd/tools/.*)#${1}$ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
-perl -pi -e 's#(.*)/usr/local/bin/python (.*/opt/iredapd/tools/.*)#${1}$ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
-perl -pi -e 's#(.*)/usr/local/bin/python2 (.*/opt/iredapd/tools/.*)#${1}$ENV{CMD_PYTHON3} ${2}#' ${CRON_FILE_ROOT}
 
 #------------------------------
 # Clean up.
 #
-rm -rf /tmp/iredapd* &>/dev/null
-
-# Remove `*.pyc` files.
+echo "* Remove all *.pyc files."
 cd ${IREDAPD_ROOT_DIR} && find . -name '*.pyc' | xargs rm -f {} &>/dev/null
 
 echo "* Restarting iRedAPD service."

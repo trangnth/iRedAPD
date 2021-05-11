@@ -1,10 +1,33 @@
-# Syslog server address.
-# Log to local socket by default, /dev/log on Linux/OpenBSD, /var/run/log on FreeBSD.
-SYSLOG_SERVER = '/dev/log'
-SYSLOG_PORT = 514
+# Rotate log file based on file size or time: size, time. Default is 'time'.
+LOGROTATE_TYPE = 'time'
 
-# Syslog facility
-SYSLOG_FACILITY = 'local5'
+# Save how many copies of rotated log files. Default is 12.
+LOGROTATE_COPIES = 12
+
+# Rotate when log file reaches specified file size. Default is 100MB (104857600)
+# Used when rotate type is 'size'.
+LOGROTATE_SIZE = 104857600
+
+# Rotate interval. Used when rotate type is 'time'.
+# Reference:
+# https://docs.python.org/2/library/logging.handlers.html#timedrotatingfilehandler
+#
+#   Value	Type of interval
+#   'S'         Seconds
+#   'M'         Minutes
+#   'H'         Hours
+#   'D'         Days
+#   'W0', 'W1', ... 'W6'    Weekday (W0 is Monday, W6 is Sunday)
+#   'midnight'	Roll over at midnight
+#
+# Format: [interval]-[type_of_internval]. Samples:
+#   - 30 minutes:       '30-M'
+#   - 1 hour:           '1-H'
+#   - 1 day:            '1-D'
+#   - every Sunday:     'W6'    # (W0 is Monday)
+#   - every midnight:   '1-midnight'
+#   - every 3 midnight: '3-midnight'
+LOGROTATE_INTERVAL = 'W6'
 
 # Priority for third-party plugins, or override pre-defined priorities in
 # libs/__init__.py.
@@ -52,28 +75,6 @@ SQL_CONNECTION_MAX_OVERFLOW = 10
 # a particular period of time.
 SQL_CONNECTION_POOL_RECYCLE = 60
 
-# The SQL db driver for Python.
-# Leave it empty to let SQLAlchemy choose the existing one, or specify the
-# preferred one and force SQLAlchemy to use it.
-SQL_DB_DRIVER = ''
-
-# DNS Query.
-# Timeout in seconds. Must be a float number.
-DNS_QUERY_TIMEOUT = 3.0
-
-# Log smtp actions returned by plugins in SQL database (table `smtp_actions`).
-LOG_SMTP_SESSIONS = True
-LOG_SMTP_SESSIONS_EXPIRE_DAYS = 7
-
-LOG_SMTP_SESSIONS_BYPASS_DUNNO = False
-LOG_SMTP_SESSIONS_BYPASS_GREYLISTING = False
-LOG_SMTP_SESSIONS_BYPASS_WHITELIST = False
-
-# (In-Memory SQLite) global session tracking.
-# If 10 seconds is not long enough to finish the process, there must be
-# something wrong and need further troubleshooting.
-TRACKING_EXPIRE_SECONDS = 10
-
 # ---------------
 # Required by:
 #   - plugins/amavisd_wblist.py
@@ -91,10 +92,6 @@ ENABLE_ALL_WILDCARD_IP = False
 #
 # Don't check white/blacklists for outgoing emails sent by sasl authenticated user.
 WBLIST_BYPASS_OUTGOING_EMAIL = False
-
-# Silently discard email instead of rejecting it with message like `Blacklisted`.
-# Note: this setting applies to all plugins which do white/blacklisting.
-WBLIST_DISCARD_INSTEAD_OF_REJECT = False
 
 # ---------------
 # Required by:
@@ -124,16 +121,12 @@ CHECK_FORGED_SENDER = True
 # For example, if some ISPs may send email as 'user@mydomain.com' (mydomain.com
 # is hosted on your server) to you, you should add `user@mydomain.com` as one
 # of forged senders.
-#
-# Another solution is enabling `CHECK_SPF_IF_LOGIN_MISMATCH = True` below, and
-# list sender server IP in SPF record of the mail domain.
-#
-# Sample setting: ALLOWED_FORGED_SENDERS = ['user@mydomain.com', 'mydomain.com']
+# Sample: ALLOWED_FORGED_SENDERS = ['user@mydomain.com', 'mydomain.com']
 ALLOWED_FORGED_SENDERS = []
 
 # Check DNS SPF record of sender domain if sender login mismatch.
 # This is useful if sender also sends email from a email service vendor.
-CHECK_SPF_IF_LOGIN_MISMATCH = True
+CHECK_SPF_IF_LOGIN_MISMATCH = False
 
 # Allow sender login mismatch for specified senders or sender domains.
 #
@@ -172,9 +165,6 @@ GREYLISTING_AUTH_TRIPLET_EXPIRE = 30
 # Time (in DAYS) to keep tracking records if client didn't pass the
 # greylisting and no further deliver attempts. Defaults to `1` day.
 GREYLISTING_UNAUTH_TRIPLET_EXPIRE = 1
-
-# Bypass if sender server IP address is listed in sender domain SPF DNS record.
-GREYLISTING_BYPASS_SPF = True
 
 # --------------
 # Required by: plugins/whitelist_outbound_recipient.py
@@ -224,52 +214,3 @@ WL_RCPT_WHITELIST_DOMAIN_FOR_GREYLISTING = False
 #
 # Don't apply throttle settings on senders specified in `MYNETWORKS`.
 THROTTLE_BYPASS_MYNETWORKS = False
-
-# Don't apply recipient throttling if both sender/recipient are hosted locally
-# (they don't have to be in same domain)
-THROTTLE_BYPASS_LOCAL_RECIPIENT = True
-
-# Don't apply any throttling if both sender/recipient are hosted locally AND
-# under same domain.
-THROTTLE_BYPASS_SAME_DOMAIN = True
-
-# ----------------
-# Required by: plugins/senderscore.py
-#
-# Reject the email if senderscore equals to or is lower than this score.
-SENDERSCORE_REJECT_SCORE = 30
-
-# Cache the score returned by DNS query for how many days.
-SENDERSCORE_CACHE_DAYS = 2
-
-# ------------------------
-# mlmmjadmin integration.
-#
-MLMMJADMIN_API_AUTH_TOKEN_HEADER_NAME = 'X-MLMMJADMIN-API-AUTH-TOKEN'
-
-# ----------------
-# Send mail
-#
-# Path to command `sendmail`. e.g. `/usr/sbin/sendmail`.
-# Leave it empty to let system detect the path.
-CMD_SENDMAIL = '/usr/sbin/sendmail'
-
-# Recipients of notification email
-NOTIFICATION_RECIPIENTS = ['root']
-
-# SMTP server address, port, username, password used to send notification mail.
-NOTIFICATION_SMTP_SERVER = 'localhost'
-NOTIFICATION_SMTP_PORT = 587
-NOTIFICATION_SMTP_STARTTLS = True
-NOTIFICATION_SMTP_USER = 'no-reply@localhost.localdomain'
-NOTIFICATION_SMTP_PASSWORD = ''
-NOTIFICATION_SMTP_DEBUG_LEVEL = 0
-
-# The short description or full name of this smtp user. e.g. 'No Reply'
-NOTIFICATION_SENDER_NAME = 'No Reply'
-
-# ----------------------------
-# Clean up related settings.
-#
-# Query and return how many rows each time for delete.
-CLEANUP_QUERY_SIZE_LIMIT = 1000

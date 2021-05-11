@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Author: Zhang Huangbin <zhb@iredmail.org>
 # Purpose: Migrate Cluebringer throttle setting to iRedAPD.
@@ -9,7 +9,7 @@
 #
 #   2) Run command:
 #
-#       python3 migrate_cluebringer_throttle.py
+#       # python migrate_cluebringer_throttle.py
 
 cluebringer_db_host = '127.0.0.1'
 cluebringer_db_port = 3306
@@ -31,17 +31,16 @@ from libs.utils import is_email, is_domain
 from tools import logger, get_db_conn
 
 backend = settings.backend
-if backend in ['pgsql']:
-    sql_dbn = 'postgres'
-else:
-    # backend in ['ldap', 'mysql']
+if backend in ['ldap', 'mysql']:
     sql_dbn = 'mysql'
+elif backend in ['pgsql']:
+    sql_dbn = 'postgres'
 
-if not (cluebringer_db_host
-        and cluebringer_db_port
-        and cluebringer_db_name
-        and cluebringer_db_user
-        and cluebringer_db_password):
+if not (cluebringer_db_host and
+        cluebringer_db_port and
+        cluebringer_db_name and
+        cluebringer_db_user and
+        cluebringer_db_password):
     # Not run cluebringer
     sys.exit("Incorrect database info, please update cluebringer_db_* parameters.")
 
@@ -57,9 +56,9 @@ conn = web.database(dbn=sql_dbn,
 
 conn.supports_multiple_insert = True
 
-logger.info("* Backend: {}".format(backend))
+logger.info('* Backend: %s' % backend)
 
-# --------------------------
+#--------------------------
 # Get throttle settings.
 #
 
@@ -71,12 +70,9 @@ outbound_settings = {}
 quotas_ids = []
 
 # Get enabled default inbound/outbound throttle.
-qr = conn.select(
-    'quotas',
-    what='id, name, period',
-    where=r"""name IN ('default_inbound', 'default_outbound') AND disabled=0""",
-)
-
+qr = conn.select('quotas',
+                 what='id, name, period',
+                 where=r"""name IN ('default_inbound', 'default_outbound') AND disabled=0""")
 if qr:
     for rcd in qr:
         _id = rcd.id
@@ -89,19 +85,15 @@ if qr:
         if _name == 'default_inbound':
             inout_type = 'inbound'
 
-        t_settings[_id] = {
-            'account': '@.',
-            'inout_type': inout_type,
-            'period': _period,
-            'priority': ACCOUNT_PRIORITIES['catchall'],
-        }
+        t_settings[_id] = {'account': '@.',
+                           'inout_type': inout_type,
+                           'period': _period,
+                           'priority': ACCOUNT_PRIORITIES['catchall']}
 
 # Get enabled throttle account and period.
-qr = conn.select(
-    'quotas',
-    what='id, name, period',
-    where=r"""(name LIKE 'inbound_%' OR name LIKE 'outbound_%') AND disabled=0""",
-)
+qr = conn.select('quotas',
+                 what='id, name, period',
+                 where=r"""(name LIKE 'inbound_%' OR name LIKE 'outbound_%') AND disabled=0""")
 
 if qr:
     for rcd in qr:
@@ -125,23 +117,19 @@ if qr:
             _account = '@' + _account
             priority = ACCOUNT_PRIORITIES['domain']
 
-        t_settings[_id] = {
-            'account': _account,
-            'inout_type': inout_type,
-            'period': _period,
-            'priority': priority,
-        }
+        t_settings[_id] = {'account': _account,
+                           'inout_type': inout_type,
+                           'period': _period,
+                           'priority': priority}
 
 if not quotas_ids:
     sys.exit('No throttle settings found. Exit.')
 
 # Get detailed throttle settings.
-qr = conn.select(
-    'quotas_limits',
-    vars={'quotas_ids': quotas_ids},
-    what='quotasid, type, counterlimit',
-    where='quotasid IN $quotas_ids',
-)
+qr = conn.select('quotas_limits',
+                 vars={'quotas_ids': quotas_ids},
+                 what='quotasid, type, counterlimit',
+                 where='quotasid IN $quotas_ids')
 
 if qr:
     for rcd in qr:
@@ -154,10 +142,11 @@ if qr:
         elif _type == 'MessageCumulativeSize':
             t_settings[_id]['max_quota'] = _counterlimit
 
-logger.info("Total {} throttle settings.".format(len(t_settings)))
+logger.info("Total %d throttle settings." % len(t_settings))
 
 conn = get_db_conn('iredapd')
 for t in t_settings:
+    #print t_settings[t]
     v = t_settings[t]
     if not ('max_msgs' in v):
         v['max_msgs'] = -1
@@ -171,5 +160,5 @@ for t in t_settings:
 
     try:
         conn.query(sql)
-    except Exception as e:
-        logger.error("<<< Error >>> {}".format(repr(e)))
+    except Exception, e:
+        logger.error("<<< Error >>> %s" % str(e))

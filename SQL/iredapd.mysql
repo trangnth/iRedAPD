@@ -1,6 +1,6 @@
 -- Throttling.
 -- Please check iRedAPD plugin `throttle` for more details.
-CREATE TABLE IF NOT EXISTS `throttle` (
+CREATE TABLE IF NOT EXISTS throttle (
     id          BIGINT(20) UNSIGNED AUTO_INCREMENT,
     account     VARCHAR(255)            NOT NULL,
 
@@ -16,13 +16,11 @@ CREATE TABLE IF NOT EXISTS `throttle` (
     --  * set value to `0` to unlimited, and stop checking settings with lower priority.
     --
     -- msg_size: single message size (in bytes)
+    -- max_msgs: cumulate max messages in total
+    -- max_quota: cumulate message size in total (in bytes)
     msg_size    BIGINT(20)              NOT NULL DEFAULT -1,
-    -- max_msgs: accumulate max messages in total
     max_msgs    BIGINT(20)              NOT NULL DEFAULT -1,
-    -- max_quota: accumulate message size in total (in bytes)
     max_quota   BIGINT(20)              NOT NULL DEFAULT -1,
-    -- max_rcpts: max recipients in one message.
-    max_rcpts   BIGINT(20)              NOT NULL DEFAULT -1,
 
     PRIMARY KEY (id),
     UNIQUE INDEX account_kind (account, kind)
@@ -47,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `throttle` (
 --    tid=`throttle.id`,
 --    account=`[throttle_account]`  # e.g. @domain.com`, `@.domain.com`, `@.`
 --
-CREATE TABLE IF NOT EXISTS `throttle_tracking` (
+CREATE TABLE IF NOT EXISTS throttle_tracking (
     id          BIGINT(20) UNSIGNED AUTO_INCREMENT,
     -- foreign key of `throttle.id`
     tid         BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
@@ -64,9 +62,6 @@ CREATE TABLE IF NOT EXISTS `throttle_tracking` (
     -- Track initial and last tracking time
     init_time   INT(10) UNSIGNED        NOT NULL DEFAULT 0, -- The time we initial the throttling.
     last_time   INT(10) UNSIGNED        NOT NULL DEFAULT 0, -- The time we last track the throttling.
-    -- the last time we sent notification email to postmaster when user
-    -- exceeded throttle setting
-    last_notify_time   INT(10) UNSIGNED NOT NULL DEFAULT 0,
 
     PRIMARY KEY (id),
     FOREIGN KEY (tid) REFERENCES throttle (id),
@@ -181,8 +176,8 @@ CREATE TABLE IF NOT EXISTS `greylisting_whitelist_domain_spf` (
 -- Old records should be removed with a cron job.
 CREATE TABLE IF NOT EXISTS `greylisting_tracking` (
     `id`                BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-    `sender`            VARCHAR(255) NOT NULL,
-    `recipient`         VARCHAR(255) NOT NULL,
+    `sender`            VARCHAR(100) NOT NULL,
+    `recipient`         VARCHAR(100) NOT NULL,
     `client_address`    VARCHAR(40) NOT NULL,
 
     `sender_domain`     VARCHAR(255) NOT NULL DEFAULT '',
@@ -201,6 +196,9 @@ CREATE TABLE IF NOT EXISTS `greylisting_tracking` (
     -- The number of delivery attempts that have been blocked
     `blocked_count`     BIGINT(20) NOT NULL DEFAULT 0,
 
+    -- The number of emails we have sucessfully passed
+    -- `blocked_count`     BIGINT(20) NOT NULL DEFAULT 0,
+
     -- Mark this triplet passes greylisting.
     `passed`            TINYINT(1) NOT NULL DEFAULT 0,
 
@@ -213,76 +211,11 @@ CREATE TABLE IF NOT EXISTS `greylisting_tracking` (
 
 CREATE TABLE IF NOT EXISTS `wblist_rdns` (
     `id`        BIGINT(20) UNSIGNED AUTO_INCREMENT,
-    `rdns`      VARCHAR(255) NOT NULL DEFAULT '',   -- reverse DNS name of sender IP address
-    `wb`        VARCHAR(10) NOT NULL DEFAULT 'B',   -- W=whitelist, B=blacklist
+    -- reverse DNS name of sender IP address
+    `rdns`      VARCHAR(255) NOT NULL DEFAULT '',
+    -- W=whitelist, B=blacklist
+    `wb`        VARCHAR(10) NOT NULL DEFAULT 'B',
     PRIMARY KEY (`id`),
     UNIQUE INDEX (`rdns`),
     INDEX (`wb`)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `srs_exclude_domains` (
-    `id`        BIGINT(20) UNSIGNED AUTO_INCREMENT,
-    `domain`      VARCHAR(255) NOT NULL DEFAULT '',
-    PRIMARY KEY (`id`),
-    UNIQUE INDEX (`domain`)
-) ENGINE=InnoDB;
-
-
-CREATE TABLE IF NOT EXISTS `senderscore_cache` (
-    `client_address`    VARCHAR(40) NOT NULL DEFAULT '',
-    -- sender score: 1-100.
-    `score`             INT(3) UNSIGNED DEFAULT 0,
-    -- creation time
-    `time`              INT(10) UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY (`client_address`),
-    INDEX (`score`),
-    INDEX (`time`)
-) ENGINE=InnoDB;
-
-
--- Log smtp sessions processed by iRedAPD.
-CREATE TABLE IF NOT EXISTS `smtp_sessions` (
-    `id`                    BIGINT(20) UNSIGNED AUTO_INCREMENT,
-    `time`                  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `time_num`              INT(10) UNSIGNED NOT NULL DEFAULT 0,
-    -- `action` and `reason` returned by plugins
-    `action`                VARCHAR(20) NOT NULL DEFAULT '',
-    `reason`                VARCHAR(150) NOT NULL DEFAULT '',
-    -- smtp session info
-    `instance`              VARCHAR(40) NOT NULL DEFAULT '',
-    `client_address`        VARCHAR(40) NOT NULL DEFAULT '',
-    `client_name`           VARCHAR(255) NOT NULL DEFAULT '',
-    `reverse_client_name`   VARCHAR(255) NOT NULL DEFAULT '',
-    `helo_name`             VARCHAR(255) NOT NULL DEFAULT '',
-    `sender`                VARCHAR(255) NOT NULL DEFAULT '',
-    `sender_domain`         VARCHAR(255) NOT NULL DEFAULT '',
-    `sasl_username`         VARCHAR(255) NOT NULL DEFAULT '',
-    `sasl_domain`           VARCHAR(255) NOT NULL DEFAULT '',
-    `recipient`             VARCHAR(255) NOT NULL DEFAULT '',
-    `recipient_domain`      VARCHAR(255) NOT NULL DEFAULT '',
-    `encryption_protocol`   VARCHAR(20) NOT NULL DEFAULT '',
-    `encryption_cipher`     VARCHAR(50) NOT NULL DEFAULT '',
-    -- Postfix-3.x logs `server_address` and `server_port`
-    `server_address`        VARCHAR(40) NOT NULL DEFAULT '',
-    `server_port`           VARCHAR(10) NOT NULL DEFAULT '',
-    PRIMARY KEY (`id`),
-    INDEX (`time`),
-    INDEX (`time_num`),
-    INDEX (`action`),
-    INDEX (`reason`),
-    INDEX (`instance`),
-    INDEX (`client_address`),
-    INDEX (`client_name`),
-    INDEX (`reverse_client_name`),
-    INDEX (`helo_name`),
-    INDEX (`sender`),
-    INDEX (`sender_domain`),
-    INDEX (`sasl_username`),
-    INDEX (`sasl_domain`),
-    INDEX (`recipient`),
-    INDEX (`recipient_domain`),
-    INDEX (`encryption_protocol`),
-    INDEX (`encryption_cipher`),
-    INDEX (`server_address`),
-    INDEX (`server_port`)
 ) ENGINE=InnoDB;

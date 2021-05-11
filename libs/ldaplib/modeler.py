@@ -1,5 +1,7 @@
 # Author: Zhang Huangbin <zhb _at_ iredmail.org>
 
+import sys
+import ldap
 from libs.logger import logger
 import settings
 from libs import SMTP_ACTIONS, utils
@@ -8,8 +10,34 @@ from libs.ldaplib import conn_utils
 
 class Modeler:
     def __init__(self, conns):
+        # Initialize ldap connection.
+        try:
+            self.conn = ldap.initialize(settings.ldap_uri)
+            logger.debug('LDAP connection initialied success.')
+        except Exception, e:
+            logger.error('LDAP initialized failed: %s.' % str(e))
+            sys.exit()
+
+        # Bind to ldap server.
+        try:
+            self.conn.bind_s(settings.ldap_binddn, settings.ldap_bindpw)
+            logger.debug('LDAP bind success.')
+        except ldap.INVALID_CREDENTIALS:
+            logger.error('LDAP bind failed: incorrect bind dn or password.')
+            sys.exit()
+        except Exception, e:
+            logger.error('LDAP bind failed: %s.' % str(e))
+            sys.exit()
+
         self.conns = conns
-        self.conn = self.conns['conn_vmail']
+        self.conns['conn_vmail'] = self.conn
+
+    def __del__(self):
+        try:
+            self.conn.unbind_s()
+            logger.debug('Close LDAP connection.')
+        except Exception, e:
+            logger.error('Error while closing connection: %s' % str(e))
 
     def handle_data(self,
                     smtp_session_data,
@@ -33,26 +61,24 @@ class Modeler:
         if self.conns['conn_iredapd']:
             conn_iredapd = self.conns['conn_iredapd'].connect()
 
-        plugin_kwargs = {
-            'smtp_session_data': smtp_session_data,
-            'conn_vmail': self.conn,
-            'conn_amavisd': conn_amavisd,
-            'conn_iredapd': conn_iredapd,
-            'sender': sender,
-            'sender_without_ext': smtp_session_data['sender_without_ext'],
-            'recipient': recipient,
-            'recipient_without_ext': smtp_session_data['recipient_without_ext'],
-            'client_address': client_address,
-            'sasl_username': sasl_username,
-            'sender_domain': smtp_session_data.get('sender_domain', ''),
-            'recipient_domain': smtp_session_data.get('recipient_domain', ''),
-            'sasl_username_domain': smtp_session_data.get('sasl_username_domain', ''),
-            'base_dn': settings.ldap_basedn,
-            'sender_dn': None,
-            'sender_ldif': None,
-            'recipient_dn': None,
-            'recipient_ldif': None,
-        }
+        plugin_kwargs = {'smtp_session_data': smtp_session_data,
+                         'conn_vmail': self.conn,
+                         'conn_amavisd': conn_amavisd,
+                         'conn_iredapd': conn_iredapd,
+                         'sender': sender,
+                         'sender_without_ext': utils.strip_mail_ext_address(sender),
+                         'recipient': recipient,
+                         'recipient_without_ext': utils.strip_mail_ext_address(recipient),
+                         'client_address': client_address,
+                         'sasl_username': sasl_username,
+                         'sender_domain': smtp_session_data.get('sender_domain', ''),
+                         'recipient_domain': smtp_session_data.get('recipient_domain', ''),
+                         'sasl_username_domain': smtp_session_data.get('sasl_username_domain', ''),
+                         'base_dn': settings.ldap_basedn,
+                         'sender_dn': None,
+                         'sender_ldif': None,
+                         'recipient_dn': None,
+                         'recipient_ldif': None}
 
         for plugin in plugins:
             # Get plugin target smtp protocol state
@@ -62,7 +88,7 @@ class Modeler:
                 target_protocol_state = ['RCPT']
 
             if protocol_state not in target_protocol_state:
-                logger.debug("Skip plugin: {} (protocol_state != {})".format(plugin.__name__, protocol_state))
+                logger.debug('Skip plugin: %s (protocol_state != %s)' % (plugin.__name__, protocol_state))
                 continue
 
             # Get LDIF data of sender if required
@@ -103,9 +129,7 @@ class Modeler:
 
         # Close sql connections.
         try:
-            if conn_amavisd:
-                conn_amavisd.close()
-
+            conn_amavisd.close()
             conn_iredapd.close()
         except:
             pass

@@ -4,29 +4,74 @@ import traceback
 import re
 import time
 import socket
-import subprocess
-import smtplib
-import ipaddress
-import uuid
-from typing import Union, List, Tuple, Set, Dict, Any
-
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import Header
-from email.utils import formatdate
 
 from sqlalchemy import create_engine
-from web import sqlquote
 
 from libs.logger import logger
 from libs import PLUGIN_PRIORITIES, ACCOUNT_PRIORITIES
-from libs import SMTP_ACTIONS
-from libs import regxes
+from libs import SMTP_ACTIONS, TCP_REPLIES
+from libs import ipaddress
 import settings
 
-if settings.backend == 'ldap':
-    import ldap
 
+# -- define cache --
+
+from beaker.cache import CacheManager
+from beaker.util import parse_cache_config_options
+
+cache_opts = {
+    'cache.type': 'memory',
+}
+
+cache = CacheManager(**parse_cache_config_options(cache_opts))
+tmpl_cache = cache.get_cache('smtpsession', type='memory', expire=30)
+
+def init_rcpt ():
+    rcpt_outbound = 0
+    return rcpt_outbound
+
+def rcpt_plus_one (key):
+    try:
+        rcpt_outbound = tmpl_cache.get_value(key=key, createfunc=init_rcpt)
+    except:
+        tmpl_cache.get(key=key, createfunc=init_rcpt)
+        rcpt_outbound = tmpl_cache.get_value(key=key, createfunc=init_rcpt)
+
+#    rcpt_outbound = tmpl_cache.get(key='rcpt_outbound')
+    rcpt_outbound += 1
+    return rcpt_outbound
+
+# -----
+
+# Mail address. +, = is used in SRS rewritten addresses.
+regx_email = r'''[\w\-\#][\w\-\.\+\=\/\#]*@[\w\-][\w\-\.]*\.[a-zA-Z0-9\-]{2,15}'''
+cmp_email = re.compile(regx_email, re.IGNORECASE | re.DOTALL)
+
+# Domain name
+regx_domain = r'''[\w\-][\w\-\.]*\.[a-z]{2,15}'''
+cmp_domain = re.compile(regx_domain, re.IGNORECASE | re.DOTALL)
+
+regx_top_level_domain = r'''[a-z0-9\-]{2,25}'''
+cmp_top_level_domain = re.compile(regx_top_level_domain, re.IGNORECASE | re.DOTALL)
+
+# IP address
+regx_ipv4 = r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'
+cmp_ipv4 = re.compile(regx_ipv4, re.IGNORECASE | re.DOTALL)
+
+regx_ipv4_cidr = r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+cmp_ipv4_cidr = re.compile(regx_ipv4_cidr, re.IGNORECASE | re.DOTALL)
+
+regx_wildcard_ipv4 = r'(?:[\d\*]{1,3})\.(?:[\d\*]{1,3})\.(?:[\d\*]{1,3})\.(?:[\d\*]{1,3})$'
+cmp_wildcard_ipv4 = re.compile(regx_wildcard_ipv4, re.IGNORECASE | re.DOTALL)
+
+regx_ipv6 = r'^s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:)))(%.+)?s*'
+cmp_ipv6 = re.compile(regx_ipv6, re.DOTALL)
+
+regx_ipv6_cidr = r'^s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]d|1dd|[1-9]?d)(.(25[0-5]|2[0-4]d|1dd|[1-9]?d)){3}))|:)))(%.+)?s*(\/(d|dd|1[0-1]d|12[0-8]))$'
+cmp_ipv6_cidr = re.compile(regx_ipv6_cidr, re.DOTALL)
+
+# Wildcard sender address: 'user@*'
+regx_wildcard_addr = r'''[\w\-][\w\-\.\+\=]*@\*'''
 
 # Priority used in SQL table `amavisd.mailaddr` and iRedAPD plugin `throttle`.
 # 0 is the lowest priority.
@@ -65,7 +110,7 @@ TRUSTED_NETWORKS = []
 for ip in settings.MYNETWORKS:
     if '/' in ip:
         try:
-            TRUSTED_NETWORKS.append(ipaddress.ip_network(ip))
+            TRUSTED_NETWORKS.append(ipaddress.ip_network(unicode(ip)))
         except:
             pass
     else:
@@ -83,15 +128,28 @@ def get_traceback():
 
 def apply_plugin(plugin, **kwargs):
     action = SMTP_ACTIONS['default']
-    plugin_name = plugin.__name__
 
-    logger.debug("--> Apply plugin: {}".format(plugin_name))
+    logger.debug('--> Apply plugin: %s' % plugin.__name__)
     try:
         action = plugin.restriction(**kwargs)
-        logger.debug("<-- Result: {}".format(action))
+        logger.debug('<-- Result: %s' % action)
     except:
         err_msg = get_traceback()
-        logger.error("<!> Error while applying plugin '{}': {}".format(plugin_name, err_msg))
+        logger.error('<!> Error while applying plugin "%s": %s' % (plugin.__name__, err_msg))
+
+    return action
+
+
+def apply_tcp_table_plugin(plugin, **kwargs):
+    action = TCP_REPLIES['default']
+
+    logger.debug('--> Apply tcp table plugin: %s' % plugin.__name__)
+    try:
+        action = plugin.restriction(**kwargs)
+        logger.debug('<-- Result: %s' % action)
+    except:
+        err_msg = get_traceback()
+        logger.error('<!> Error while applying plugin "%s": %s' % (plugin.__name__, err_msg))
 
     return action
 
@@ -103,7 +161,7 @@ def is_email(s):
         return False
 
     # Not contain invalid characters and match regular expression
-    if not set(s) & set(r'~!$%^*()\/ ') and regxes.cmp_email.match(s):
+    if not set(s) & set(r'~!$%^&*()\/ ') and cmp_email.match(s):
         return True
 
     return False
@@ -112,7 +170,7 @@ def is_email(s):
 def is_tld_domain(s):
     s = str(s)
 
-    if regxes.cmp_top_level_domain.match(s):
+    if cmp_top_level_domain.match(s):
         return True
     else:
         return False
@@ -120,21 +178,21 @@ def is_tld_domain(s):
 
 # Valid IP address
 def is_ipv4(s):
-    if re.match(regxes.regx_ipv4, s):
+    if re.match(regx_ipv4, s):
         return True
 
     return False
 
 
 def is_ipv6(s):
-    if re.match(regxes.regx_ipv6, s):
+    if re.match(regx_ipv6, s):
         return True
     return False
 
 
 def is_strict_ip(s):
     try:
-        ipaddress.ip_address(s)
+        ipaddress.ip_address(unicode(s))
         return True
     except:
         return False
@@ -142,14 +200,13 @@ def is_strict_ip(s):
 
 def is_cidr_network(s):
     try:
-        ipaddress.ip_network(s)
+        ipaddress.ip_network(unicode(s))
         return True
     except:
         return False
 
-
 def is_wildcard_ipv4(s):
-    if re.match(regxes.regx_wildcard_ipv4, s):
+    if re.match(regx_wildcard_ipv4, s):
         return True
 
     return False
@@ -157,47 +214,48 @@ def is_wildcard_ipv4(s):
 
 def is_domain(s):
     s = str(s)
-    if len(set(s) & set('~!#$%^&*()+\\/ ')) > 0 or '.' not in s:
+    if len(set(s) & set('~!#$%^&*()+\\/\ ')) > 0 or '.' not in s:
         return False
 
-    if regxes.cmp_domain.match(s):
+    if cmp_domain.match(s):
         return True
     else:
         return False
 
 
 def is_wildcard_addr(s):
-    if re.match(regxes.regx_wildcard_addr, s):
+    if re.match(regx_wildcard_addr, s):
         return True
 
     return False
 
 
 def get_policy_addresses_from_email(mail):
-    """Return list of valid policy addresses from given email address.
+    # Return list valid policy addresses from a given email address
+    #
+    # - Sample input: mail=user@sub2.sub1.com.cn
+    # - Valid policy addresses:
+    #   * user@sub2.sub1.com.cn
+    #   * @sub2.sub1.com.cn
+    #   * @.sub2.sub1.com.cn
+    #   * @.sub1.com.cn
+    #   * @.com.cn
+    #   * @.cn
+    #   * @.        # catch-all
+    (_username, _domain) = mail.split('@', 1)
+    splited_domain_parts = _domain.split('.')
 
-    >>> get_policy_addresses_from_email(mail="user@sub3.sub2.sub1.com")
-    ["user@sub3.sub2.sub1.com",     # full email address
-         "@sub3.sub2.sub1.com",     # entire domain (without sub-domains)
-        "@.sub3.sub2.sub1.com",     # entire domain with sub-domains
-             "@.sub2.sub1.com",     # all sub-sub domains
-                  "@.sub1.com",     # all sub-sub-sub domains
-                       "@.com",     # all top-level domains
-                          "@.",     # catch-all
-    ]
-    """
-    if not is_email(mail):
-        return ['@.']
+    # Default senders (user@domain.ltd):
+    # ['@.', 'user@domain.ltd', @domain.ltd']
+    valid_addresses = [mail, '@' + _domain, '@.']
 
-    (_user, _domain) = mail.split('@', 1)
-    _domain_parts = _domain.split('.')
+    for counter in range(len(splited_domain_parts)):
+        # Append domain and sub-domain.
+        subd = '.'.join(splited_domain_parts)
+        valid_addresses.append('@.' + subd)
+        splited_domain_parts.pop(0)
 
-    addresses = [mail, '@' + _domain, '@.']
-    for (_index, _sub) in enumerate(_domain_parts):
-        _addr = '@.' + '.'.join(_domain_parts[_index:])
-        addresses.append(_addr)
-
-    return addresses
+    return valid_addresses
 
 
 def is_valid_amavisd_address(addr):
@@ -251,53 +309,35 @@ def is_valid_amavisd_address(addr):
     return False
 
 
-def get_db_conn(db_name):
+def get_db_conn(db):
     """Return SQL connection instance with connection pool support."""
     if settings.backend == 'pgsql':
         dbn = 'postgres'
     else:
         dbn = 'mysql'
 
-    if settings.SQL_DB_DRIVER:
-        dbn += '+' + settings.SQL_DB_DRIVER
-
-    _user = settings.__dict__[db_name + '_db_user']
-    _pw = settings.__dict__[db_name + '_db_password']
-    _server = settings.__dict__[db_name + '_db_server']
-    _port = settings.__dict__[db_name + '_db_port']
-    _name = settings.__dict__[db_name + '_db_name']
-
     try:
-        _port = int(_port)
-    except:
-        if dbn == 'postgres':
-            _port = 5432
-        else:
-            _port = 3306
-
-    if not all([_user, _pw, _server, _port, _name]):
-        return None
-
-    try:
-        uri = '%s://%s:%s@%s:%d/%s' % (dbn, _user, _pw, _server, _port, _name)
-
-        if settings.backend == 'mysql':
-            uri += '?charset=utf8'
+        uri = '%s://%s:%s@%s:%d/%s' % (dbn,
+                                       settings.__dict__[db + '_db_user'],
+                                       settings.__dict__[db + '_db_password'],
+                                       settings.__dict__[db + '_db_server'],
+                                       int(settings.__dict__[db + '_db_port']),
+                                       settings.__dict__[db + '_db_name'])
 
         conn = create_engine(uri,
                              pool_size=settings.SQL_CONNECTION_POOL_SIZE,
                              pool_recycle=settings.SQL_CONNECTION_POOL_RECYCLE,
                              max_overflow=settings.SQL_CONNECTION_MAX_OVERFLOW)
         return conn
-    except Exception as e:
-        logger.error("Error while creating SQL connection: {}".format(repr(e)))
+    except Exception, e:
+        logger.error('Error while create SQL connection: %s' % repr(e))
         return None
 
 
-def wildcard_ipv4(s):
+def wildcard_ipv4(ip):
     ips = []
-    if is_ipv4(s):
-        ip4 = s.split('.')
+    if is_ipv4(ip):
+        ip4 = ip.split('.')
 
         if settings.ENABLE_ALL_WILDCARD_IP:
             ip4s = set()
@@ -328,10 +368,10 @@ def is_ip(s):
     try:
         # Verify whether it's valid IP address or network.
         if '/' in s:
-            if regxes.cmp_ipv4_cidr.match(s) or regxes.cmp_ipv6_cidr.match(s):
+            if cmp_ipv4_cidr.match(s) or cmp_ipv6_cidr.match(s):
                 return True
         else:
-            if regxes.cmp_ipv4.match(s) or regxes.cmp_ipv6.match(s):
+            if cmp_ipv4.match(s) or cmp_ipv6.match(s):
                 return True
 
         return False
@@ -340,10 +380,10 @@ def is_ip(s):
 
 
 def is_trusted_client(client_address):
-    msg = 'Client address (%s) is trusted (listed in MYNETWORKS).' % client_address
+    msg = 'Client address (%s) is trusted networks (MYNETWORKS).' % client_address
 
     if client_address in ['127.0.0.1', '::1']:
-        logger.debug("Client address is trusted (localhost): {}".format(client_address))
+        logger.debug('Client address is trusted localhost: %s.' % client_address)
         return True
 
     if client_address in TRUSTED_IPS:
@@ -354,7 +394,7 @@ def is_trusted_client(client_address):
         logger.debug(msg)
         return True
 
-    ip_addr = ipaddress.ip_address(client_address)
+    ip_addr = ipaddress.ip_address(unicode(client_address))
     for net in TRUSTED_NETWORKS:
         if ip_addr in net:
             logger.debug(msg)
@@ -366,6 +406,7 @@ def is_trusted_client(client_address):
 def pretty_left_seconds(seconds=0):
     hours = 0
     mins = 0
+    left_seconds = 0
 
     # hours
     if seconds >= 3600:
@@ -396,6 +437,7 @@ def pretty_left_seconds(seconds=0):
 
 
 def get_gmttime():
+    # Convert local time to UTC
     return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
 
 
@@ -449,61 +491,34 @@ def log_policy_request(smtp_session_data, action, start_time=None, end_time=None
     sender = smtp_session_data.get('sender', '')
     recipient = smtp_session_data.get('recipient', '')
 
-    client_address = smtp_session_data['client_address']
-    protocol_state = smtp_session_data['protocol_state']
-    helo = smtp_session_data.get('helo_name', '')
-    client_name = smtp_session_data.get('client_name', '')
-    reverse_client_name = smtp_session_data.get('reverse_client_name', '').lstrip('[').rstrip(']')
-
     if sasl_username:
         if sasl_username == sender:
-            _log_sender_to_rcpt = "{} => {}".format(sasl_username, recipient)
+            _log_sender_to_rcpt = '%s => %s' % (sasl_username, recipient)
         else:
-            _log_sender_to_rcpt = "{} => {} -> {}".format(sasl_username, sender, recipient)
+            _log_sender_to_rcpt = '%s => %s -> %s' % (sasl_username, sender, recipient)
     else:
-        _log_sender_to_rcpt = "{} -> {}".format(sender, recipient)
+        _log_sender_to_rcpt = '%s -> %s' % (sender, recipient)
 
     _time = ''
     if start_time and end_time:
-        _shift_time = end_time - start_time
-        _time = "{:.4f}s".format(_shift_time)
+        _time = ' [%.4fs]' % (end_time - start_time)
 
     # Log final action
-    if smtp_session_data['protocol_state'] == 'RCPT':
-        logger.info("[{}] {}, {}, "
-                    "{} [sasl_username={}, sender={}, "
-                    "client_name={}, "
-                    "reverse_client_name={}, "
-                    "helo={}, "
-                    "encryption_protocol={}, "
-                    "encryption_cipher={}, "
-                    "server_port={}, "
-                    "process_time={}]".format(
-                        client_address, protocol_state, _log_sender_to_rcpt,
-                        action, sasl_username, sender,
-                        client_name,
-                        reverse_client_name,
-                        helo,
-                        smtp_session_data.get('encryption_protocol', ''),
-                        smtp_session_data.get('encryption_cipher', ''),
-                        smtp_session_data.get('server_port', ''),
-                        _time))
-    else:
-        logger.info("[{}] {}, {}, "
-                    "{} [recipient_count={}, "
-                    "size={}, process_time={}]".format(
-                        client_address, protocol_state, _log_sender_to_rcpt,
-                        action, smtp_session_data.get('recipient_count', 0),
-                        smtp_session_data.get('size', 0), _time))
+    logger.info('[%s] %s, %s, %s%s' % (smtp_session_data['client_address'],
+                                       smtp_session_data['protocol_state'],
+                                       _log_sender_to_rcpt,
+                                       action,
+                                       _time))
 
     return None
 
 
-def load_enabled_plugins(plugins):
+def load_enabled_plugins(plugins=None):
     """Load and import enabled plugins."""
     plugin_dir = os.path.abspath(os.path.dirname(__file__)) + '/../plugins'
 
     loaded_plugins = []
+    loaded_tcp_table_plugin = None
 
     # Import priorities of built-in plugins.
     _plugin_priorities = PLUGIN_PRIORITIES
@@ -514,38 +529,48 @@ def load_enabled_plugins(plugins):
     if not plugins:
         plugins = settings.plugins
 
+    if 'custom_tcp_table' in plugins:
+        plugins.remove('custom_tcp_table')
+
+        # Load tcp table plugin
+        plugin_file = os.path.join(plugin_dir, 'custom_tcp_table.py')
+        if not os.path.isfile(plugin_file):
+            logger.debug('Plugin custom_tcp_table does not exist, SKIP.')
+        else:
+            try:
+                logger.info('Loading plugin custom_tcp_table')
+                loaded_tcp_table_plugin = __import__('custom_tcp_table')
+            except Exception, e:
+                logger.error('Error while loading plugin custom_tcp_table: %s' % repr(e))
+
+    # If enabled plugin doesn't have a priority pre-defined, set it to 0 (lowest)
+    _plugins_without_priority = [i for i in plugins if i not in _plugin_priorities]
+    for _p in _plugins_without_priority:
+        _plugin_priorities[_p] = 0
+
     # a list of {priority: name}
     pnl = []
-
     for p in plugins:
         plugin_file = os.path.join(plugin_dir, p + '.py')
-
-        # Skip non-existing plugin.
         if not os.path.isfile(plugin_file):
-            logger.error("Plugin {} ({}) does not exist.".format(p, plugin_file))
+            logger.error('Plugin %s (%s) does not exist.' % (p, plugin_file))
             continue
 
-        # If plugin doesn't have a pre-defined priority, set it to 0 (lowest)
-        if p not in _plugin_priorities:
-            _plugin_priorities[p] = 0
-
         priority = _plugin_priorities[p]
-        pnl += [{'priority': priority, 'plugin': p}]
+        pnl += [{priority: p}]
 
     # Sort plugin order with pre-defined priorities, so that we can apply
     # plugins in ideal order.
-    pnl.sort(key=lambda d: d['priority'], reverse=True)
-
     ordered_plugins = []
-    for item in pnl:
-        ordered_plugins.append(item['plugin'])
+    for item in sorted(pnl, reverse=True):
+        ordered_plugins += item.values()
 
     for plugin in ordered_plugins:
         try:
             loaded_plugins.append(__import__(plugin))
-            logger.info("Loading plugin (priority: {}): {}".format(_plugin_priorities[plugin], plugin))
-        except Exception as e:
-            logger.error("Error while loading plugin '{}': {}".format(plugin, repr(e)))
+            logger.info('Loading plugin (priority: %s): %s' % (_plugin_priorities[plugin], plugin))
+        except Exception, e:
+            logger.error('Error while loading plugin (%s): %s' % (plugin, repr(e)))
 
     # Get list of LDAP query attributes
     sender_search_attrlist = []
@@ -567,266 +592,23 @@ def load_enabled_plugins(plugins):
                 pass
 
     return {'loaded_plugins': loaded_plugins,
+            'loaded_tcp_table_plugin': loaded_tcp_table_plugin,
             'sender_search_attrlist': sender_search_attrlist,
             'recipient_search_attrlist': recipient_search_attrlist}
 
 
 def get_required_db_conns():
     """Establish SQL database connections."""
-    if settings.backend == 'ldap':
-        try:
-            ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
-            conn_vmail = ldap.ldapobject.ReconnectLDAPObject(settings.ldap_uri)
-            logger.debug('LDAP connection initialied success.')
-
-            if settings.ldap_enable_tls:
-                conn_vmail.start_tls_s()
-
-            # Bind to ldap server.
-            try:
-                conn_vmail.bind_s(settings.ldap_binddn, settings.ldap_bindpw)
-                logger.debug('LDAP bind success.')
-            except ldap.INVALID_CREDENTIALS:
-                logger.error('LDAP bind failed: incorrect bind dn or password.')
-            except Exception as e:
-                logger.error("LDAP bind failed: {}".format(repr(e)))
-        except Exception as e:
-            logger.error("Fail2ed to establish LDAP connection: {}".format(repr(e)))
-            conn_vmail = None
-    else:
-        # settings.backend in ['mysql', 'pgsql']
+    if settings.backend in ['mysql', 'pgsql']:
         conn_vmail = get_db_conn('vmail')
+    else:
+        # we don't have ldap connection pool, a connection object will be
+        # created in libs/ldaplib/modeler.py.
+        conn_vmail = None
 
     conn_amavisd = get_db_conn('amavisd')
     conn_iredapd = get_db_conn('iredapd')
 
-    return {
-        'conn_vmail': conn_vmail,
-        'conn_amavisd': conn_amavisd,
-        'conn_iredapd': conn_iredapd,
-    }
-
-
-def sendmail_with_cmd(from_address, recipients, message_text):
-    """Send email with `sendmail` command (defined in CMD_SENDMAIL).
-
-    :param recipients: a list/set/tuple of recipient email addresses, or a
-                       string of a single mail address.
-    :param message_text: encoded mail message.
-    :param from_address: the From: address used while sending email.
-    """
-    if isinstance(recipients, (list, tuple, set)):
-        recipients = ','.join(recipients)
-
-    cmd = [settings.CMD_SENDMAIL, "-f", from_address, recipients]
-
-    try:
-        p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-        p.stdin.write(message_text)
-        p.stdin.close()
-        p.wait()
-
-        return (True, )
-    except Exception as e:
-        return (False, repr(e))
-
-
-def sendmail(subject, mail_body, from_address=None, recipients=None):
-    """Send email through smtp or with command `sendmail`.
-
-    :param subject: mail subject.
-    :param mail_body: plain mail body.
-    :param from_address: the address specified in `From:` header.
-    :param recipients: a list/set/tuple of recipient email addresses.
-    """
-    server = settings.NOTIFICATION_SMTP_SERVER
-    port = settings.NOTIFICATION_SMTP_PORT
-    user = settings.NOTIFICATION_SMTP_USER
-    password = settings.NOTIFICATION_SMTP_PASSWORD
-    starttls = settings.NOTIFICATION_SMTP_STARTTLS
-    debug_level = settings.NOTIFICATION_SMTP_DEBUG_LEVEL
-
-    if not from_address:
-        from_address = user
-
-    if not recipients:
-        recipients = settings.NOTIFICATION_RECIPIENTS
-
-    #
-    # Generate mail message
-    #
-    msg = MIMEMultipart('alternative')
-
-    _smtp_sender = settings.NOTIFICATION_SMTP_USER
-    _smtp_sender_name = settings.NOTIFICATION_SENDER_NAME
-    if _smtp_sender_name:
-        msg['From'] = '{} <{}>'.format(Header(_smtp_sender_name, 'utf-8'), _smtp_sender)
-    else:
-        msg['From'] = _smtp_sender
-
-    msg['To'] = ','.join(recipients)
-    msg['Subject'] = Header(subject, 'utf-8')
-    msg['Date'] = formatdate(usegmt=True)
-    msg['Message-Id'] = '<' + str(uuid.uuid4()) + '>'
-
-    msg_body_plain = MIMEText(mail_body, 'plain', 'utf-8')
-    msg.attach(msg_body_plain)
-
-    # Get full email as a string.
-    message_text = msg.as_string()
-
-    if server and port and user and password:
-        # Send email through standard smtp protocol
-        try:
-            s = smtplib.SMTP(server, port)
-            s.set_debuglevel(debug_level)
-
-            if starttls:
-                s.ehlo()
-                s.starttls()
-                s.ehlo()
-
-            s.login(user, password)
-            s.sendmail(from_address, recipients, message_text)
-            s.quit()
-            return (True, )
-        except Exception as e:
-            return (False, repr(e))
-    else:
-        return sendmail_with_cmd(from_address=from_address,
-                                 recipients=recipients,
-                                 message_text=message_text)
-
-
-def log_smtp_session(conn, smtp_action, **smtp_session_data):
-    """Store smtp action in SQL table `iredapd.smtp_sessions`."""
-    if not settings.LOG_SMTP_SESSIONS:
-        return None
-
-    _action_and_reason = smtp_action.split(" ", 1)
-    _action = _action_and_reason[0]
-
-    if settings.LOG_SMTP_SESSIONS_BYPASS_GREYLISTING:
-        if smtp_action.startswith(SMTP_ACTIONS['greylisting']):
-            return None
-
-    if settings.LOG_SMTP_SESSIONS_BYPASS_WHITELIST:
-        if _action == 'OK':
-            return None
-
-    if len(_action_and_reason) == 1:
-        _reason = ''
-    else:
-        if _action == 'DUNNO':
-            _reason = ''
-        else:
-            _reason = _action_and_reason[1]
-
-    sql = """
-        INSERT INTO smtp_sessions (
-            time, time_num,
-            action, reason, instance,
-            client_address, client_name, reverse_client_name, helo_name,
-            encryption_protocol, encryption_cipher,
-            server_address, server_port,
-            sender, sender_domain,
-            sasl_username, sasl_domain,
-            recipient, recipient_domain)
-        VALUES (
-            %s, %d,
-            %s, %s, %s,
-            %s, %s, %s, %s,
-            %s, %s,
-            %s, %s,
-            %s, %s,
-            %s, %s,
-            %s, %s)
-    """ % (sqlquote(get_gmttime()), int(time.time()),
-           sqlquote(_action), sqlquote(_reason),
-           sqlquote(smtp_session_data.get("instance", "")),
-           sqlquote(smtp_session_data.get("client_address", "")),
-           sqlquote(smtp_session_data.get('client_name', '')),
-           sqlquote(smtp_session_data.get('reverse_client_name', '')),
-           sqlquote(smtp_session_data.get('helo_name', '')),
-           sqlquote(smtp_session_data.get('encryption_protocol', '')),
-           sqlquote(smtp_session_data.get('encryption_cipher', '')),
-           sqlquote(smtp_session_data.get('server_address', '')),
-           sqlquote(smtp_session_data.get('server_port', '')),
-           sqlquote(smtp_session_data.get('sender_without_ext', '')),
-           sqlquote(smtp_session_data.get('sender_domain', '')),
-           sqlquote(smtp_session_data.get('sasl_username', '')),
-           sqlquote(smtp_session_data.get('sasl_username_domain', '')),
-           sqlquote(smtp_session_data.get('recipient_without_ext', '')),
-           sqlquote(smtp_session_data.get('recipient_domain', '')))
-
-    try:
-        logger.debug("[SQL] Insert into smtp_sessions: {}".format(sql))
-        conn.execute(sql)
-    except Exception as e:
-        logger.error("<!> Error while logging smtp action: {}".format(repr(e)))
-
-    return None
-
-
-def __bytes2str(b) -> str:
-    """Convert object `b` to string.
-
-    >>> __bytes2str("a")
-    'a'
-    >>> __bytes2str(b"a")
-    'a'
-    >>> __bytes2str(["a"])  # list: return `repr()`
-    "['a']"
-    >>> __bytes2str(("a",)) # tuple: return `repr()`
-    "('a',)"
-    >>> __bytes2str({"a"})  # set: return `repr()`
-    "{'a'}"
-    """
-    if isinstance(b, str):
-        return b
-
-    if isinstance(b, (bytes, bytearray)):
-        return b.decode()
-    elif isinstance(b, memoryview):
-        return b.tobytes().decode()
-    else:
-        return repr(b)
-
-
-def bytes2str(b: Union[bytes, str, List, Tuple, Set, Dict])\
-        -> Union[str, List[str], Tuple[str], Dict[Any, str]]:
-    """Convert `b` from bytes-like type to string.
-
-    - If `b` is a string object, returns original `b`.
-    - If `b` is a bytes, returns `b.decode()`.
-
-    bytes-like object, return `repr(b)` directly.
-
-    >>> bytes2str("a")
-    'a'
-    >>> bytes2str(b"a")
-    'a'
-    >>> bytes2str(["a"])
-    ['a']
-    >>> bytes2str((b"a",))
-    ('a',)
-    >>> bytes2str({b"a"})
-    {'a'}
-    >>> bytes2str({"a": b"a"})      # used to convert LDAP query result.
-    {'a': 'a'}
-    """
-    if isinstance(b, list):
-        s = [bytes2str(i) for i in b]
-    elif isinstance(b, tuple):
-        s = tuple([bytes2str(i) for i in b])
-    elif isinstance(b, set):
-        s = {bytes2str(i) for i in b}
-    elif isinstance(b, dict):
-        new_dict = {}
-        for (k, v) in list(b.items()):
-            new_dict[k] = bytes2str(v)  # v could be list/tuple/dict
-        s = new_dict
-    else:
-        s = __bytes2str(b)
-
-    return s
+    return {'conn_vmail': conn_vmail,
+            'conn_amavisd': conn_amavisd,
+            'conn_iredapd': conn_iredapd}

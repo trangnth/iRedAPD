@@ -16,10 +16,7 @@ from libs.ldaplib import conn_utils
 import settings
 
 REQUIRE_LOCAL_RECIPIENT = True
-RECIPIENT_SEARCH_ATTRLIST = [
-    'accountStatus', 'listAllowedUser',
-    'accessPolicy', 'enabledService',
-]
+RECIPIENT_SEARCH_ATTRLIST = ['listAllowedUser', 'accessPolicy']
 
 
 def restriction(**kwargs):
@@ -38,29 +35,13 @@ def restriction(**kwargs):
     if 'mailList' not in recipient_ldif['objectClass']:
         return SMTP_ACTIONS['default'] + ' (Recipient is not a mailing list account)'
 
-    # Reject if mailing list is disabled.
-    # NOTE: Postfix doesn't query account status of mailing list, so we need
-    #       to do it here.
-    if recipient_ldif.get('accountStatus', []) != ['active']:
-        logger.debug('Recipient (mailing list) is disabled, message rejected.')
-        return SMTP_ACTIONS['reject']
-
     # Get access policy
     policy = recipient_ldif.get('accessPolicy', [MAILLIST_POLICY_PUBLIC])[0].lower()
 
     # Log access policy
-    logger.debug('Access policy of mailing list ({}): {}'.format(recipient, policy))
-
+    logger.debug('Access policy of mailing list (%s): %s' % (recipient, policy))
     if policy == MAILLIST_POLICY_PUBLIC:
         return SMTP_ACTIONS['default'] + ' (Access policy: %s, no restriction)' % MAILLIST_POLICY_PUBLIC
-    elif policy == 'allowedonly':
-        # 'allowedonly' is policy name used by old iRedAPD releases.
-        policy = MAILLIST_POLICY_MODERATORS
-
-    if 'mlmmj' in recipient_ldif.get('enabledService', []):
-        if policy in [MAILLIST_POLICY_MEMBERSONLY, MAILLIST_POLICY_MODERATORS]:
-            logger.debug('Recipient is a mlmmj mailing list, let mlmmj handle the ACL.')
-            return SMTP_ACTIONS['default']
 
     conn = kwargs['conn_vmail']
     sender = kwargs['sender_without_ext']
@@ -70,7 +51,7 @@ def restriction(**kwargs):
     # Get primary recipient domain and all its alias domains
     valid_rcpt_domains = conn_utils.get_primary_and_alias_domains(conn=conn,
                                                                   domain=recipient_domain)
-    logger.debug('Primary and all alias domain names of recipient domain ({}): {}'.format(recipient_domain, ', '.join(valid_rcpt_domains)))
+    logger.debug('Primary and all alias domain names of recipient domain (%s): %s' % (recipient_domain, ', '.join(valid_rcpt_domains)))
 
     #
     # No matter what access policy it has, bypass explictly allowed senders
@@ -86,7 +67,7 @@ def restriction(**kwargs):
     # Check all possible sender domains (without checking sender alias domains)
     _possible_sender_domains = [sender_domain]
     _domain_parts = sender_domain.split('.')
-    for _ in _domain_parts:
+    for i in _domain_parts:
         _possible_sender_domains += ['.' + '.'.join(_domain_parts)]
         _domain_parts.pop(0)
 
@@ -104,15 +85,13 @@ def restriction(**kwargs):
         if policy == MAILLIST_POLICY_DOMAIN:
             # Bypass all users under the same domain.
             if sender_domain in valid_rcpt_domains:
-                logger.info('Sender domain ({}) is allowed by access policy of mailing list: {}.'.format(sender_domain, policy))
-                return SMTP_ACTIONS['default']
+                return SMTP_ACTIONS['default'] + ' (Sender bypasses access policy: %s (%s))' % (MAILLIST_POLICY_DOMAIN, sender_domain)
 
         elif policy == MAILLIST_POLICY_SUBDOMAIN:
             # Bypass all users under the same domain and all sub domains.
             for d in valid_rcpt_domains:
                 if sender_domain == d or sender_domain.endswith('.' + d):
-                    logger.info('Sender domain ({}) is allowed by access policy of mailing list: {}.'.format(d, policy))
-                    return SMTP_ACTIONS['default']
+                    return SMTP_ACTIONS['default'] + ' (Sender bypasses access policy: %s (%s))' % (MAILLIST_POLICY_SUBDOMAIN, d)
 
         return SMTP_ACTIONS['reject_not_authorized']
 
@@ -135,17 +114,16 @@ def restriction(**kwargs):
 
         allowed_senders = []
         for (_dn, _ldif) in qr:
-            _ldif = utils.bytes2str(_ldif)
             for k in search_attrs:
                 allowed_senders += _ldif.get(k, [])
 
         if sender in allowed_senders:
-            logger.info('Sender ({}) is allowed by access policy of mailing list: {}.'.format(sender, policy))
-            return SMTP_ACTIONS['default']
+            return SMTP_ACTIONS['default'] + ' (Sender bypasses access policy: %s (%s))' % (MAILLIST_POLICY_MEMBERSONLY, sender)
 
         return SMTP_ACTIONS['reject_not_authorized']
 
-    elif policy == MAILLIST_POLICY_MEMBERSANDMODERATORSONLY:
+    elif policy in ['allowedonly', MAILLIST_POLICY_MEMBERSANDMODERATORSONLY]:
+        # 'allowedonly' is policy name used by old iRedAPD.
         # Get both members and moderators.
         _f = '(|' + \
              '(&(memberOfGroup=%s)(|(objectClass=mailUser)(objectClass=mailExternalUser)))' % recipient + \
@@ -165,15 +143,13 @@ def restriction(**kwargs):
 
             # Collect values of all search attributes
             for (_dn, _ldif) in qr:
-                _ldif = utils.bytes2str(_ldif)
                 for k in search_attrs:
                     allowed_senders += _ldif.get(k, [])
 
             if sender in allowed_senders:
-                logger.info('Sender ({}) is allowed by access policy of mailing list: {}.'.format(sender, policy))
-                return SMTP_ACTIONS['default']
-        except Exception as e:
-            _msg = 'Error while querying allowed senders of mailing list (access policy: {}): {}'.format(MAILLIST_POLICY_MEMBERSANDMODERATORSONLY, repr(e))
+                return SMTP_ACTIONS['default'] + ' (Sender bypasses access policy: %s (%s))' % (MAILLIST_POLICY_MEMBERSANDMODERATORSONLY, sender)
+        except Exception, e:
+            _msg = 'Error while querying allowed senders of mailing list (access policy: %s): %s' % (MAILLIST_POLICY_MEMBERSANDMODERATORSONLY, repr(e))
             logger.error(_msg)
             return SMTP_ACTIONS['default'] + ' (%s)' % _msg
 
@@ -221,7 +197,7 @@ def restriction(**kwargs):
             _basedn = 'ou=Users,' + dn_rcpt_domain
             _f = '(&(objectClass=mailUser)(enabledService=shadowaddress)(|'
             for i in _users:
-                _f += '(mail={})(shadowAddress={})'.format(i, i)
+                _f += '(mail=%s)(shadowAddress=%s)' % (i, i)
             _f += '))'
 
             _search_attrs = ['mail', 'shadowAddress']
@@ -229,13 +205,12 @@ def restriction(**kwargs):
             logger.debug('base dn: %s' % _basedn)
             logger.debug('search scope: ONELEVEL')
             logger.debug('search filter: %s' % _f)
-            logger.debug('search attributes: %s' % ', '.join(_search_attrs))
+            logger.debug('search attributes: %s' % ', '.join(search_attrs))
 
             qr = conn.search_s(_basedn, 1, _f, _search_attrs)
             logger.debug('query result: %s' % str(qr))
 
             for (_dn, _ldif) in qr:
-                _ldif = utils.bytes2str(_ldif)
                 for k in _search_attrs:
                     allowed_senders += _ldif.get(k, [])
 
@@ -245,7 +220,7 @@ def restriction(**kwargs):
             _basedn = settings.ldap_basedn
             _f = '(&(objectClass=mailDomain)(enabledService=domainalias)(|'
             for i in _domains:
-                _f += '(domainName={})(domainAliasName={})'.format(i, i)
+                _f += '(domainName=%s)(domainAliasName=%s)' % (i, i)
             _f += '))'
 
             _search_attrs = ['domainName', 'domainAliasName']
@@ -253,7 +228,7 @@ def restriction(**kwargs):
             logger.debug('base dn: %s' % _basedn)
             logger.debug('search scope: ONELEVEL')
             logger.debug('search filter: %s' % _f)
-            logger.debug('search attributes: %s' % ', '.join(_search_attrs))
+            logger.debug('search attributes: %s' % ', '.join(search_attrs))
 
             qr = conn.search_s(_basedn, 1, _f, _search_attrs)
             logger.debug('result: %s' % str(qr))
@@ -269,8 +244,7 @@ def restriction(**kwargs):
                         allowed_senders += [d for d in _all_domains]
 
         if sender in allowed_senders or sender_domain in allowed_senders:
-            logger.info('Sender ({}) is allowed by access policy of mailing list: {}.'.format(sender, policy))
-            return SMTP_ACTIONS['default']
+            return SMTP_ACTIONS['default'] + ' (Sender is allowed)'
         else:
             return SMTP_ACTIONS['reject_not_authorized']
 

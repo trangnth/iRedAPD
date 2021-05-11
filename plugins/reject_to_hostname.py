@@ -3,25 +3,21 @@
 
 import socket
 
-from libs import SMTP_ACTIONS
 from libs.utils import is_trusted_client
 
 server_hostname = socket.gethostname()
 
-
 def restriction(*args, **kwargs):
     # Bypass authenticated user.
     if kwargs['sasl_username']:
-        return SMTP_ACTIONS['default']
+        return 'DUNNO'
 
     # Bypass localhost.
     if is_trusted_client(kwargs['client_address']):
-        return SMTP_ACTIONS['default']
+        return 'DUNNO'
 
-    recipient = kwargs['recipient']
     rcpt_domain = kwargs['recipient_domain']
     if rcpt_domain == server_hostname:
-        if not (recipient.startswith('srs0=') or recipient.startswith('srs1=')):
-            return SMTP_ACTIONS['reject_not_authorized']
+        return 'REJECT Not authorized'
 
-    return SMTP_ACTIONS['default']
+    return 'DUNNO'

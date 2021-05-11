@@ -10,23 +10,23 @@
 #
 # *) Add required parameters in /opt/iredapd/settings.py:
 #
-#   # List all spam trap accounts here. Wildcard address like 'spam@',
+#	# List all spam trap accounts here. Wildcard address like 'spam@',
 #       # 'trap@' is supported.
-#   SPAM_TRAP_ACCOUNTS = ['spam-trap@mydomain.com']
+#	SPAM_TRAP_ACCOUNTS = ['spam-trap@mydomain.com']
 #
-#   # Define the smtp action for emails sent to spam trap account.
-#   # We use the new transport '127.0.0.1:10028' defined in Postfix to
-#   # handle them.
-#   # Reference: http://www.postfix.org/access.5.html
-#   SPAM_TRAP_SMTP_ACTION = 'FILTER smtp:[127.0.0.1]:10028'
+#	# Define the smtp action for emails sent to spam trap account.
+#	# We use the new transport '127.0.0.1:10028' defined in Postfix to
+#	# handle them.
+#	# Reference: http://www.postfix.org/access.5.html
+#	SPAM_TRAP_SMTP_ACTION = 'FILTER smtp:[127.0.0.1]:10028'
 #
 #       # Define whether we should block the sender email address.
 #       # If you want to block sender, you'd better set the plugin priority
 #       # lower than the `amavisd_wblist` plugin.
 #       SPAM_TRAP_BLOCK_SENDER = True
 #
-#   # Define the plugin priority. 100 is highest, 0 is lowest.
-#   PLUGIN_PRIORITIES['custom_spam_trap'] = 100
+#	# Define the plugin priority. 100 is highest, 0 is lowest.
+#	PLUGIN_PRIORITIES['custom_spam_trap'] = 100
 #
 # *) Restart iRedAPD service.
 
@@ -36,7 +36,6 @@ from libs import utils, wblist
 import settings
 
 _action = settings.SPAM_TRAP_SMTP_ACTION
-
 
 def _block_sender(sender):
     if not settings.SPAM_TRAP_BLOCK_SENDER:
@@ -51,7 +50,6 @@ def _block_sender(sender):
 
     return qr
 
-
 def restriction(**kwargs):
     sender = kwargs['sender']
     recipient = kwargs['recipient']
@@ -64,7 +62,7 @@ def restriction(**kwargs):
     for rcpt in settings.SPAM_TRAP_ACCOUNTS:
         if rcpt.endswith('@'):
             if recipient.startswith(rcpt):
-                logger.debug('Spam trap recipient found (matches: {}): {}.'.format(rcpt, recipient))
+                logger.debug('Spam trap recipient found (matches: %s): %s.' % (rcpt, recipient))
                 _block_sender(sender=sender)
                 return settings.SPAM_TRAP_SMTP_ACTION
 

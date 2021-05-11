@@ -14,14 +14,9 @@ CREATE TABLE throttle (
     -- throttle settings.
     --  * set value to -1 to force check setting with lower priority
     --  * set value to 0 to unlimited, and stop checking settings with lower priority.
-    -- msg_size: single message size (in bytes)
-    msg_size    BIGINT                  NOT NULL DEFAULT -1,
-    -- max_msgs: accumulate max messages in total
-    max_msgs    BIGINT                  NOT NULL DEFAULT -1,
-    -- max_quota: accumulate message size in total (in bytes)
-    max_quota   BIGINT                  NOT NULL DEFAULT -1,
-    -- max_rcpts: max recipients in one message.
-    max_rcpts   BIGINT                  NOT NULL DEFAULT -1
+    msg_size    BIGINT                  NOT NULL DEFAULT -1, -- Limit of single (received) message size, in bytes.
+    max_msgs    BIGINT                  NOT NULL DEFAULT -1, -- Number of max (received) messages in total.
+    max_quota   BIGINT                  NOT NULL DEFAULT -1 -- Number of current (received) messages.
 );
 
 CREATE INDEX idx_account ON throttle (account);
@@ -43,10 +38,7 @@ CREATE TABLE throttle_tracking (
 
     -- Track initial and last tracking time
     init_time   BIGINT NOT NULL DEFAULT 0, -- The time we initial the throttling.
-    last_time   BIGINT NOT NULL DEFAULT 0, -- The time we last track the throttling.
-    -- the last time we sent notification email to postmaster when user
-    -- exceeded throttle setting
-    last_notify_time   BIGINT NOT NULL DEFAULT 0
+    last_time   BIGINT NOT NULL DEFAULT 0 -- The time we last track the throttling.
 );
 
 CREATE INDEX idx_tid_account ON throttle_tracking (tid, account);
@@ -136,6 +128,7 @@ CREATE TABLE greylisting_whitelist_domains (
     id          SERIAL PRIMARY KEY,
     domain      VARCHAR(255) NOT NULL DEFAULT ''
 );
+
 CREATE UNIQUE INDEX idx_greylisting_whitelist_domains_domain ON greylisting_whitelist_domains (domain);
 
 -- 'tools/spf_to_greylisting_whitelists.py' will query SPF/MX DNS records of
@@ -190,72 +183,10 @@ CREATE INDEX idx_greylisting_tracking_client_address_passed ON greylisting_track
 
 CREATE TABLE wblist_rdns (
     id      SERIAL PRIMARY KEY,
-    rdns    VARCHAR(255) NOT NULL DEFAULT '',   -- reverse DNS name of sender IP address
-    wb      VARCHAR(10) NOT NULL DEFAULT 'B'    -- W=whitelist, B=blacklist
+    -- reverse DNS name of sender IP address
+    rdns    VARCHAR(255) NOT NULL DEFAULT '',
+    -- W=whitelist, B=blacklist
+    wb      VARCHAR(10) NOT NULL DEFAULT 'B'
 );
 CREATE UNIQUE INDEX idx_wblist_rdns_rdns ON wblist_rdns (rdns);
 CREATE INDEX idx_wblist_rdns_wb ON wblist_rdns (wb);
-
-CREATE TABLE srs_exclude_domains (
-    id      SERIAL PRIMARY KEY,
-    domain  VARCHAR(255) NOT NULL DEFAULT ''
-);
-CREATE UNIQUE INDEX idx_srs_exclude_domains_domain ON srs_exclude_domains (domain);
-
-
-CREATE TABLE senderscore_cache (
-    client_address  VARCHAR(40) NOT NULL DEFAULT '',
-    score           INT DEFAULT 0,  -- score: 1-100.
-    time            BIGINT NOT NULL DEFAULT 0,
-    PRIMARY KEY (client_address)
-);
-CREATE INDEX idx_senderscore_cache_score ON senderscore_cache (score);
-CREATE INDEX idx_senderscore_cache_time ON senderscore_cache (time);
-
-
--- Log smtp sessions processed by iRedAPD.
-CREATE TABLE smtp_sessions (
-    id      SERIAL PRIMARY KEY,
-    time    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    time_num    BIGINT NOT NULL DEFAULT 0,
-    -- `action` and `reason` returned by plugins
-    action                VARCHAR(20) NOT NULL DEFAULT '',
-    reason                VARCHAR(255) NOT NULL DEFAULT '',
-    -- smtp session info
-    instance              VARCHAR(40) NOT NULL DEFAULT '',
-    client_address        VARCHAR(40) NOT NULL DEFAULT '',
-    client_name           VARCHAR(255) NOT NULL DEFAULT '',
-    reverse_client_name   VARCHAR(255) NOT NULL DEFAULT '',
-    helo_name             VARCHAR(255) NOT NULL DEFAULT '',
-    sender                VARCHAR(255) NOT NULL DEFAULT '',
-    sender_domain         VARCHAR(255) NOT NULL DEFAULT '',
-    sasl_username         VARCHAR(255) NOT NULL DEFAULT '',
-    sasl_domain           VARCHAR(255) NOT NULL DEFAULT '',
-    recipient             VARCHAR(255) NOT NULL DEFAULT '',
-    recipient_domain      VARCHAR(255) NOT NULL DEFAULT '',
-    encryption_protocol   VARCHAR(20) NOT NULL DEFAULT '',
-    encryption_cipher     VARCHAR(50) NOT NULL DEFAULT '',
-    -- Postfix-3.x logs `server_address` and `server_port`
-    server_address        VARCHAR(40) NOT NULL DEFAULT '',
-    server_port           VARCHAR(10) NOT NULL DEFAULT ''
-);
-
-CREATE INDEX idx_smtp_sessions_time ON smtp_sessions (time);
-CREATE INDEX idx_smtp_sessions_time_num ON smtp_sessions (time_num);
-CREATE INDEX idx_smtp_sessions_action ON smtp_sessions (action);
-CREATE INDEX idx_smtp_sessions_reason ON smtp_sessions (reason);
-CREATE INDEX idx_smtp_sessions_instance ON smtp_sessions (instance);
-CREATE INDEX idx_smtp_sessions_client_address ON smtp_sessions (client_address);
-CREATE INDEX idx_smtp_sessions_client_name ON smtp_sessions (client_name);
-CREATE INDEX idx_smtp_sessions_reverse_client_name ON smtp_sessions (reverse_client_name);
-CREATE INDEX idx_smtp_sessions_helo_name ON smtp_sessions (helo_name);
-CREATE INDEX idx_smtp_sessions_sender ON smtp_sessions (sender);
-CREATE INDEX idx_smtp_sessions_sender_domain ON smtp_sessions (sender_domain);
-CREATE INDEX idx_smtp_sessions_sasl_username ON smtp_sessions (sasl_username);
-CREATE INDEX idx_smtp_sessions_sasl_domain ON smtp_sessions (sasl_domain);
-CREATE INDEX idx_smtp_sessions_recipient ON smtp_sessions (recipient);
-CREATE INDEX idx_smtp_sessions_recipient_domain ON smtp_sessions (recipient_domain);
-CREATE INDEX idx_smtp_sessions_encryption_protocol ON smtp_sessions (encryption_protocol);
-CREATE INDEX idx_smtp_sessions_encryption_cipher ON smtp_sessions (encryption_cipher);
-CREATE INDEX idx_smtp_sessions_server_address ON smtp_sessions (server_address);
-CREATE INDEX idx_smtp_sessions_server_port ON smtp_sessions (server_port);

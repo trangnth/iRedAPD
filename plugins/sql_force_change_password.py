@@ -32,7 +32,6 @@ from libs import SMTP_ACTIONS
 
 reject_action = 'REJECT ' + settings.CHANGE_PASSWORD_MESSAGE
 
-
 def restriction(**kwargs):
     if not kwargs['sasl_username']:
         return 'DUNNO Not a local user'
@@ -47,7 +46,7 @@ def restriction(**kwargs):
 
     # Get `mailbox.passwordlastchange`.
     sql = """SELECT passwordlastchange FROM mailbox WHERE username=%s LIMIT 1""" % sqlquote(sasl_username)
-    logger.debug('SQL to get mailbox.passwordlastchange of sender ({}): {}'.format(sasl_username, sql))
+    logger.debug('SQL to get mailbox.passwordlastchange of sender (%s): %s' % (sasl_username, sql))
 
     conn = kwargs['conn_vmail']
     qr = conn.execute(sql)
@@ -70,3 +69,7 @@ def restriction(**kwargs):
         return SMTP_ACTIONS['default']
     else:
         logger.debug("Sender didn't change password in last %d days." % settings.CHANGE_PASSWORD_DAYS)
+        return reject_action
+
+    logger.debug("Sender will be forced to change password on %s." % str(pwchdate + datetime.timedelta(days=settings.CHANGE_PASSWORD_DAYS)))
+    return SMTP_ACTIONS['default']

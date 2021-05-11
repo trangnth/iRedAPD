@@ -20,7 +20,6 @@ class Modeler:
         sender = smtp_session_data.get('sender', '')
         recipient = smtp_session_data.get('recipient', '')
         client_address = smtp_session_data.get('client_address', '')
-        sasl_username = smtp_session_data.get('sasl_username', '')
 
         conn_vmail = self.conns['conn_vmail'].connect()
 
@@ -32,21 +31,19 @@ class Modeler:
         if self.conns['conn_iredapd']:
             conn_iredapd = self.conns['conn_iredapd'].connect()
 
-        plugin_kwargs = {
-            'smtp_session_data': smtp_session_data,
-            'conn_vmail': conn_vmail,
-            'conn_amavisd': conn_amavisd,
-            'conn_iredapd': conn_iredapd,
-            'sender': sender,
-            'sender_without_ext': smtp_session_data['sender_without_ext'],
-            'recipient': recipient,
-            'recipient_without_ext': smtp_session_data['recipient_without_ext'],
-            'client_address': client_address,
-            'sender_domain': smtp_session_data.get('sender_domain', ''),
-            'recipient_domain': smtp_session_data.get('recipient_domain', ''),
-            'sasl_username': sasl_username,
-            'sasl_username_domain': smtp_session_data.get('sasl_username_domain', ''),
-        }
+        plugin_kwargs = {'smtp_session_data': smtp_session_data,
+                         'conn_vmail': conn_vmail,
+                         'conn_amavisd': conn_amavisd,
+                         'conn_iredapd': conn_iredapd,
+                         'sender': sender,
+                         'sender_without_ext': utils.strip_mail_ext_address(sender),
+                         'recipient': recipient,
+                         'recipient_without_ext': utils.strip_mail_ext_address(recipient),
+                         'client_address': client_address,
+                         'sender_domain': smtp_session_data.get('sender_domain', ''),
+                         'recipient_domain': smtp_session_data.get('recipient_domain', ''),
+                         'sasl_username': smtp_session_data.get('sasl_username', ''),
+                         'sasl_username_domain': smtp_session_data.get('sasl_username_domain', '')}
 
         # TODO Get SQL record of mail user or mail alias before applying plugins
         # TODO Query required sql columns instead of all
@@ -57,10 +54,16 @@ class Modeler:
                 target_protocol_state = plugin.SMTP_PROTOCOL_STATE
             except:
                 target_protocol_state = ['RCPT']
+                #logger.debug('TRANG_NE: %s', trang_ne)
 
             if protocol_state not in target_protocol_state:
-                logger.debug("Skip plugin: {} (protocol_state != {})".format(plugin.__name__, protocol_state))
+                logger.debug('Skip plugin: %s (protocol_state != %s)' % (plugin.__name__, protocol_state))
                 continue
+            if plugin.__name__ == "throttle":
+                #plugin_kwargs['trang_ne'] = trang_ne
+                if protocol_state == "END-OF-MESSAGE":
+                #    trang_ne = 0
+                    logger.debug("--kokokokkokokkkk--")
 
             action = utils.apply_plugin(plugin, **plugin_kwargs)
 
@@ -70,10 +73,8 @@ class Modeler:
         # Close sql connections.
         try:
             conn_vmail.close()
+            conn_amavisd.close()
             conn_iredapd.close()
-
-            if conn_amavisd:
-                conn_amavisd.close()
         except:
             pass
 

@@ -12,28 +12,17 @@
 """
 
 import time
-import ipaddress
-
 from web import sqlquote
 from libs.logger import logger
-from libs import SMTP_ACTIONS, ACCOUNT_PRIORITIES
-from libs import utils, dnsspf
+from libs import SMTP_ACTIONS, ACCOUNT_PRIORITIES, utils, ipaddress
+from libs.utils import is_trusted_client, get_policy_addresses_from_email
 import settings
-
-if settings.backend == 'ldap':
-    from libs.ldaplib.conn_utils import get_alias_target_domain
-else:
-    from libs.sql import get_alias_target_domain
 
 # Return 4xx with greylisting message to Postfix.
 action_greylisting = SMTP_ACTIONS['greylisting'] + ' ' + settings.GREYLISTING_MESSAGE
 
 
-def _is_whitelisted(conn,
-                    senders,
-                    recipients,
-                    client_address,
-                    ip_object):
+def _is_whitelisted(conn, senders, recipients, client_address, ip_object):
     """Check greylisting whitelists stored in table
     `greylisting_whitelists` and `greylisting_whitelist_domain_spf`,
     returns True if is whitelisted, otherwise returns False.
@@ -45,60 +34,54 @@ def _is_whitelisted(conn,
     @ip_object -- object of IP address type (get by ipaddress.ip_address())
     """
 
-    whitelists = []
+    whitelist_records = []
 
     for tbl in ['greylisting_whitelist_domain_spf', 'greylisting_whitelists']:
         # query whitelists based on recipient
-        sql = """SELECT sender
+        sql = """SELECT id, sender, comment
                    FROM %s
                   WHERE account IN %s""" % (tbl, sqlquote(recipients))
 
-        logger.debug('[SQL] Query greylisting whitelists from `{}`: \n{}'.format(tbl, sql))
+        logger.debug('[SQL] Query greylisting whitelists from `%s`: \n%s' % (tbl, sql))
         qr = conn.execute(sql)
         records = qr.fetchall()
+        whitelist_records += records
 
-        _wls = [str(v[0]).lower() for v in records]
-
-        # check whether sender (email/domain/ip) is explicitly whitelisted
-        if client_address in _wls:
-            logger.info('[%s] Client IP is explictly whitelisted for greylisting service.' % (client_address))
+        # check whitelisted senders
+        whitelists = [str(v).lower() for (_, v, _) in records]
+        wl = set(senders) & set(whitelists)
+        if wl:
+            logger.info('[%s] Client is whitelisted for greylisting service: %s' % (client_address, ', '.join(wl)))
             return True
+        else:
+            logger.debug('[%s] No whitelist found.' % (client_address))
 
-        _wl_senders = set(senders) & set(_wls)
-        if _wl_senders:
-            logger.info('[{}] Sender address is explictly whitelisted for greylisting service: {}'.format(client_address, ', '.join(_wl_senders)))
-            return True
-
-        whitelists += _wls
-
-    logger.debug('[%s] Client is not explictly whitelisted.' % (client_address))
-
-    # IPv4/v6 CIDR networks
+    # check whitelisted cidr
     _cidrs = []
-
-    # Gather CIDR networks
+    # Check IPv4.
     if ip_object.version == 4:
-        # if `ip=a.b.c.d`, ip prefix = `a.`
-        _cidr_prefix = client_address.split('.', 1)[0] + '.'
+        # if `ip=a.b.c.d`, ip prefix = `a.b.`
+        _cidr_prefix = '.'.join(client_address.split('.', 2)[:2]) + '.'
 
         # Make sure _cidr is IPv4 network and in 'same' IP range.
-        _cidrs = [_cidr for _cidr in whitelists if (_cidr.startswith(_cidr_prefix) and '/' in _cidr)]
+        _cidrs = [(_id, _cidr, _comment)
+                  for (_id, _cidr, _comment) in whitelist_records
+                  if (_cidr.startswith(_cidr_prefix) and '.0/' in _cidr)]
     elif ip_object.version == 6:
-        # if `ip=a:b:c:...`, ip prefix = `a:`
-        _cidr_prefix = client_address.split(':', 1)[0] + ':'
-
-        _cidrs = [_cidr for _cidr in whitelists if _cidr.startswith(_cidr_prefix) and ':/' in _cidr]
+        _cidrs = [(_id, _cidr, _comment)
+                  for (_id, _cidr, _comment) in whitelist_records
+                  if (':' in _cidr and '/' in _cidr)]
 
     if _cidrs:
         _net = ()
-        for _cidr in _cidrs:
+        for (_id, _cidr, _comment) in _cidrs:
             try:
-                _net = ipaddress.ip_network(_cidr)
+                _net = ipaddress.ip_network(unicode(_cidr))
                 if ip_object in _net:
-                    logger.info('[{}] Client network is whitelisted: cidr={}'.format(client_address, _cidr))
+                    logger.info('[%s] Client is whitelisted for greylisting service: (id=%d, sender=%s, comment="%s")' % (client_address, _id, _cidr, _comment))
                     return True
-            except Exception as e:
-                logger.debug('Not an valid IP network: sender={}, error={}'.format(_cidr, repr(e)))
+            except Exception, e:
+                logger.debug('Not an valid IP network: (id=%d, sender=%s, comment="%s"), error: %s' % (_id, _cidr, _comment, str(e)))
 
     logger.debug('No whitelist found.')
     return False
@@ -107,10 +90,11 @@ def _is_whitelisted(conn,
 def _client_address_passed_in_tracking(conn, client_address):
     sql = """SELECT id
                FROM greylisting_tracking
-              WHERE client_address=%s AND passed=1
+              WHERE client_address=%s
+                    AND passed=1
               LIMIT 1""" % sqlquote(client_address)
 
-    logger.debug('[SQL] check whether client address ({}) passed greylisting: \n{}'.format(client_address, sql))
+    logger.debug('[SQL] check whether client address (%s) passed greylisting: \n%s' % (client_address, sql))
     qr = conn.execute(sql)
     sql_record = qr.fetchone()
 
@@ -150,7 +134,7 @@ def _should_be_greylisted_by_setting(conn,
         return False
 
     if ip_object.version == 4:
-        _cidr_prefix = client_address.split('.', 1)[0] + '.'
+        _cidr_prefix = '.'.join(client_address.split('.', 2)[:2]) + '.'
 
     # Found enabled/disabled greylisting setting
     for r in records:
@@ -171,17 +155,15 @@ def _should_be_greylisted_by_setting(conn,
                         _net = ipaddress.ip_network(_sender)
                         if ip_object in _net:
                             _matched = True
-                    except Exception as e:
-                        logger.debug('Not a valid IP network: {} (error: {})'.format(_sender, e))
+                    except Exception, e:
+                        logger.debug('Not an valid IP network: %s (error: %s)' % (_sender, str(e)))
 
         if _matched:
             if _active == 1:
-                logger.debug("Greylisting should be applied according to SQL "
-                             "record: (id={}, account='{}', sender='{}')".format(_id, _account, _sender))
+                logger.debug("Greylisting should be applied according to SQL record: (id=%d, account='%s', sender='%s')" % (_id, _account, _sender))
                 return True
             else:
-                logger.debug("Greylisting should NOT be applied according to "
-                             "SQL record: (id={}, account='{}', sender='{}')".format(_id, _account, _sender))
+                logger.debug("Greylisting should NOT be applied according to SQL record: (id=%d, account='%s', sender='%s')" % (_id, _account, _sender))
                 # return directly
                 return False
 
@@ -205,6 +187,7 @@ def _should_be_greylisted_by_tracking(conn,
     auth_triplet_expire = now + int(settings.GREYLISTING_AUTH_TRIPLET_EXPIRE) * 24 * 60 * 60
 
     sender = sqlquote(sender)
+    sender_domain = sqlquote(sender_domain)
     recipient = sqlquote(recipient)
     recipient_domain = sqlquote(recipient_domain)
     client_address_sql = sqlquote(client_address)
@@ -221,18 +204,16 @@ def _should_be_greylisted_by_tracking(conn,
               LIMIT 1""" % (sender, recipient, client_address_sql)
 
     logger.debug('[SQL] query greylisting tracking: \n%s' % sql)
-    sql_record = None
     try:
         qr = conn.execute(sql)
         sql_record = qr.fetchone()
-    except Exception as e:
-        logger.error('Error while querying greylisting tracking: {}. SQL: {}'.format(repr(e), sql))
+    except Exception, e:
+        logger.error('Error while querying greylisting tracking: %s. SQL: %s' % (repr(e), sql))
 
     if not sql_record:
         # Not record found, insert a new one.
-        logger.info('[{}] Client has not been seen before, greylisted ({}).'.format(client_address, sender_domain))
+        logger.info('[%s] Client has not been seen before, greylisted.' % client_address)
 
-        sender_domain = sqlquote(sender_domain)
         sql = """INSERT INTO greylisting_tracking (sender, sender_domain,
                                                    recipient, rcpt_domain,
                                                    client_address,
@@ -247,7 +228,7 @@ def _should_be_greylisted_by_tracking(conn,
         logger.debug('[SQL] New tracking: \n%s' % sql)
         try:
             conn.execute(sql)
-        except Exception as e:
+        except Exception, e:
             if e.__class__.__name__ == 'IntegrityError':
                 pass
             else:
@@ -275,7 +256,7 @@ def _should_be_greylisted_by_tracking(conn,
     # Tracking record doesn't expire, check whether client retries too soon.
     if now < _block_expired:
         # blocking not expired
-        logger.info('[{}] Client retries too soon, greylisted again ({}).'.format(client_address, sender_domain))
+        logger.info('[%s] Client retries too soon, greylisted again.' % client_address)
         sql = """UPDATE greylisting_tracking
                     SET blocked_count=blocked_count + 1
                   WHERE     sender=%s
@@ -285,7 +266,7 @@ def _should_be_greylisted_by_tracking(conn,
         logger.debug('[SQL] Update tracking record: \n%s' % sql)
         try:
             conn.execute(sql)
-        except Exception as e:
+        except Exception, e:
             logger.error('Error while updating greylisting tracking: %s' % repr(e))
             conn.execute(sql)
             logger.error('Re-updated. It is safe to ignore above error message.')
@@ -308,8 +289,8 @@ def _should_be_greylisted_by_tracking(conn,
             logger.debug('[SQL] Update expired date: \n%s' % sql)
             try:
                 conn.execute(sql)
-            except Exception as e:
-                logger.error('[{}] Error while Updating expired date for passed client: {}'.format(client_address, repr(e)))
+            except Exception, e:
+                logger.error('[%s] Error while Updating expired date for passed client: %s' % (client_address, repr(e)))
 
             # Remove other tracking records from same client IP address to save
             # database space.
@@ -319,49 +300,52 @@ def _should_be_greylisted_by_tracking(conn,
             logger.debug('[SQL] Remove other tracking records from same client IP address: \n%s' % sql)
             try:
                 conn.execute(sql)
-            except Exception as e:
-                logger.error('[{}] Error while removing other tracking records from passed client: {}'.format(client_address, repr(e)))
+            except Exception, e:
+                logger.error('[%s] Error while removing other tracking records from passed client: %s' % (client_address, repr(e)))
 
         return False
 
 
 def restriction(**kwargs):
+    # Bypass null sender (in case we don't have `reject_null_sender` plugin enabled)
+    #if not kwargs['sender']:
+    #    logger.debug('Bypass greylisting for null sender.')
+    #    return SMTP_ACTIONS['default']
+
     # Bypass outgoing emails.
     if kwargs['sasl_username']:
         logger.debug('Found SASL username, bypass greylisting for outbound email.')
         return SMTP_ACTIONS['default']
 
     client_address = kwargs['client_address']
-    if utils.is_trusted_client(client_address):
+    if is_trusted_client(client_address):
         return SMTP_ACTIONS['default']
+
+    conn = kwargs['conn_iredapd']
 
     sender = kwargs['sender_without_ext']
     sender_domain = kwargs['sender_domain']
+    sender_tld_domain = sender_domain.split('.')[-1]
     recipient = kwargs['recipient_without_ext']
     recipient_domain = kwargs['recipient_domain']
 
-    policy_recipients = utils.get_policy_addresses_from_email(mail=recipient)
-    policy_senders = utils.get_policy_addresses_from_email(mail=sender)
-    policy_senders += [client_address]
-
-    # If recipient_domain is an alias domain name, we should check the target
-    # domain.
-    conn_vmail = kwargs['conn_vmail']
-    alias_target_rcpt_domain = get_alias_target_domain(alias_domain=recipient_domain, conn=conn_vmail)
-    if alias_target_rcpt_domain:
-        _addr = recipient.split('@', 1)[0] + '@' + alias_target_rcpt_domain
-        policy_recipients += utils.get_policy_addresses_from_email(mail=_addr)
+    policy_recipients = get_policy_addresses_from_email(mail=recipient)
+    policy_senders = [sender,                   # email address
+                      '@' + sender_domain,      # sender domain
+                      '@.' + sender_domain,     # sender sub-domains
+                      sender_tld_domain,        # top-level-domain
+                      '@.',                     # catch-all
+                      client_address]           # client IP address
 
     if utils.is_ipv4(client_address):
         # Add wildcard ip address: xx.xx.xx.*.
         policy_senders += client_address.rsplit('.', 1)[0] + '.*'
 
     # Get object of IP address type
-    _ip_object = ipaddress.ip_address(client_address)
+    _ip_object = ipaddress.ip_address(unicode(client_address))
 
-    conn_iredapd = kwargs['conn_iredapd']
     # Check greylisting whitelists
-    if _is_whitelisted(conn=conn_iredapd,
+    if _is_whitelisted(conn=conn,
                        senders=policy_senders,
                        recipients=policy_recipients,
                        client_address=client_address,
@@ -369,25 +353,14 @@ def restriction(**kwargs):
         return SMTP_ACTIONS['default']
 
     # Check greylisting settings
-    if not _should_be_greylisted_by_setting(conn=conn_iredapd,
+    if not _should_be_greylisted_by_setting(conn=conn,
                                             recipients=policy_recipients,
                                             senders=policy_senders,
                                             client_address=client_address,
                                             ip_object=_ip_object):
         return SMTP_ACTIONS['default']
 
-    # Bypass if sender server is listed in SPF DNS record of sender domain.
-    if settings.GREYLISTING_BYPASS_SPF:
-        if sender_domain == settings.srs_domain:
-            # Don't check if sender domain (in smtp session) is same as SRS
-            # domain. It's probably local server has SRS enabled, and Postfix
-            # rewrites address before communicates with SMTP policy server (iRedAPD).
-            pass
-        elif dnsspf.is_allowed_server_in_spf(sender_domain=sender_domain, ip=client_address):
-            logger.info('[{}] Bypass greylisting due to SPF match ({})'.format(client_address, sender_domain))
-            return SMTP_ACTIONS['default']
-
-    if _client_address_passed_in_tracking(conn=conn_iredapd, client_address=client_address):
+    if _client_address_passed_in_tracking(conn=conn, client_address=client_address):
         # Update expire time
         _now = int(time.time())
         _new_expire_time = _now + settings.GREYLISTING_AUTH_TRIPLET_EXPIRE * 24 * 60 * 60
@@ -395,12 +368,12 @@ def restriction(**kwargs):
                      SET record_expired=%d
                    WHERE client_address=%s AND passed=1""" % (_new_expire_time, sqlquote(client_address))
         logger.debug('[SQL] Update expire time of passed client: \n%s' % _sql)
-        conn_iredapd.execute(_sql)
+        conn.execute(_sql)
 
         return SMTP_ACTIONS['default']
 
     # check greylisting tracking.
-    if _should_be_greylisted_by_tracking(conn=conn_iredapd,
+    if _should_be_greylisted_by_tracking(conn=conn,
                                          sender=sender,
                                          sender_domain=sender_domain,
                                          recipient=recipient,

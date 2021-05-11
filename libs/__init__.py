@@ -1,10 +1,11 @@
-__author__ = "Zhang Huangbin <zhb@iredmail.org>"
-__version__ = "5.0.2"
+__author__ = 'Zhang Huangbin <zhb@iredmail.org>'
+__version__ = '2.2'
 
 
 SMTP_ACTIONS = {
     'default': 'DUNNO',
     # Use 'OK' carefully, it will bypass other Postfix/iRedAPD restrictions.
+    'accept': 'OK',
     'whitelist': 'OK',
     # discard email without return error message to sender
     'discard': 'DISCARD Policy discard',
@@ -19,11 +20,9 @@ SMTP_ACTIONS = {
     'reject_message_size_exceeded': 'REJECT Message size exceed (maybe caused by big attachment file)',
     'reject_blacklisted_rdns': 'REJECT Blacklisted reverse DNS name of server IP address',
     # Throttling
-    'reject_quota_exceeded': 'REJECT Throttling quota exceeded',
-    'reject_msg_size_exceeded': 'REJECT Message size is too large',
-    'reject_max_rcpts_exceeded': 'REJECT Too many recipients in single message',
-    # Sender Score
-    'reject_low_sender_score': 'REJECT Server IP address has bad reputation. FYI: https://www.senderscore.org/lookup.php?lookup=',
+    'reject_exceed_msg_size': 'REJECT Quota exceeded (size of single mail message)',
+    'reject_exceed_max_msgs': 'REJECT Quota exceeded (number of mails in total)',
+    'reject_exceed_max_quota': 'REJECT Quota exceeded (accumulated message size)',
     'greylisting': '451 4.7.1',
 }
 
@@ -33,7 +32,7 @@ TCP_REPLIES = {
     # In case of a lookup request, the requested data does not exist.
     # In case of an update request, the request was rejected. The text
     # describes the nature of the problem.
-    'not_exist': '500 ',
+    'default': '500 No result',
 
     # This indicates an error condition. The text describes the nature
     # of the problem. The client should retry the request later.
@@ -41,7 +40,7 @@ TCP_REPLIES = {
 
     # The request was successful. In the case of a lookup request,
     # the text contains an encoded version of the requested data.
-    'success': '200 ',
+    'found': '200 ',
 }
 
 # Plugin priorities.
@@ -63,11 +62,9 @@ PLUGIN_PRIORITIES = {
     'sql_force_change_password_in_days': 70,
     'throttle': 60,
     'ldap_maillist_access_policy': 50,
-    'sql_ml_access_policy': 51,
     'sql_alias_access_policy': 50,
     'amavisd_wblist': 40,
-    'whitelist_outbound_recipient': 30,
-    'senderscore': 10,
+    'whitelist_outbound_recipient': 10,
 }
 
 # Account proiroties.

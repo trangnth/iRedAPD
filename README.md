@@ -1,30 +1,18 @@
 # Introduction
 
-* iRedAPD is a simple [Postfix policy server](http://www.postfix.org/SMTPD_POLICY_README.html),
-  written in Python and runs as a low-privileged user (`iredapd` by default),
-  with plugin support.
+* iRedAPD is a simple [Postfix policy server](http://www.postfix.org/SMTPD_POLICY_README.html), written in Python, with plugin support.
+* iRedAPD listens on port `7777`, runs as a low-privileged user (`iredapd` by default).
 * The latest iRedAPD works with OpenLDAP, MySQL/MariaDB and PostgreSQL backends.
-* __License: GPL v3__, except few files are in different licenses, shipped in
-  iRedAPD for easier setup, but not license change.
-    * file `libs/daemon.py` is BSD license.
-    * file `libs/srslib.py` is Apache License, Version 2.0.
+* License: GPL v3 (except file libs/daemon.py, BSD style as mentioned in this file by file author).
 * Author: Zhang Huangbin <zhb _at_ iredmail.org>.
 
 **NOTES**:
 
 * iRedAPD is a sub-project of [iRedMail project](http://www.iredmail.org).
-* iRedAPD is installed and enabled in iRedMail by default, you don’t need
-  this tutorial if you already have iRedMail running. For standard installation
-  please check document `INSTALL.md`.
-* iRedAPD listens on 3 ports by default:
-    - `7777`: normal smtp policy service
-    - `7778`: SRS (Sender Rewriting Scheme) for sender address rewriting
-    - `7779`: SRS (Sender Rewriting Scheme) for recipient address rewriting
+* iRedAPD is installed and enabled in iRedMail by default, so you don’t need
+  this tutorial if you already have iRedMail running. Standalone installation
+  guide is `INSTALL.md`.
 * You can manage iRedAPD with iRedMail [web admin panel - iRedAdmin-Pro](http://www.iredmail.org/admin_panel.html).
-
-# Requirements
-
-- Python 3.5+
 
 # Manage iRedAPD with command line tools
 
@@ -35,7 +23,7 @@ with command line tools: [Manage iRedAPD](http://www.iredmail.org/docs/manage.ir
 
 Plugins are files placed under `plugins/` directory, plugin name is file name
 without file extension `.py`. It's recommended to read comment lines in plugin
-source files to understand what it does and how it works.
+source files to understand how it works and what it does.
 
 ## Plugins for all backends
 
