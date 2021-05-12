@@ -1,5 +1,6 @@
 .idea
 libs/*.pyc
+libs/*/*.pyc
 plugins/*.pyc
 settings.py
 settings.pyc
