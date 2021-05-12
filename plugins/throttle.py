@@ -465,6 +465,8 @@ def apply_throttle(conn,
                                                                                                        throttle_type,
                                                                                                        size,
                                                                                                        throttle_info))
+                logger.debug("WLWLWLWLWWLWW - END-OF-MESSAGE: %s" % protocol_state)
+                tmpl_cache.remove_value(key=key_user)                                                                                                
                 return SMTP_ACTIONS['reject_exceed_msg_size']
             else:
                 # Show the time tracking record is about to expire
@@ -494,6 +496,8 @@ def apply_throttle(conn,
                                                                                                        throttle_type,
                                                                                                        recipient_count,
                                                                                                        throttle_info))
+                logger.debug("WLWLWLWLWWLWW - END-OF-MESSAGE: %s" % protocol_state)
+                tmpl_cache.remove_value(key=key_user)  
                 return SMTP_ACTIONS['reject_exceed_max_rcpts']
             else:
                 # Show the time tracking record is about to expire
@@ -529,6 +533,8 @@ def apply_throttle(conn,
                                                                                                 throttle_type,
                                                                                                 _cur_quota,
                                                                                                 throttle_info))
+                logger.debug("WLWLWLWLWWLWW - END-OF-MESSAGE: %s" % protocol_state)
+                tmpl_cache.remove_value(key=key_user) 
                 return SMTP_ACTIONS['reject_exceed_max_quota']
             else:
                 # Show the time tracking record is about to expire
