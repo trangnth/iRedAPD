@@ -81,6 +81,9 @@
 #   * msg_size: max size of single message
 #   * max_msgs: max number of sent messages
 #   * max_quota: max number of accumulated message size
+#   * max_rcpts: max recipients in single message
+#   
+#   ALTER TABLE throttle ADD COLUMN max_rcpts BIGINT(20) NOT NULL DEFAULT -1;
 #
 # Valid values for throttle settings:
 #
@@ -201,7 +204,7 @@ def apply_throttle(conn,
         throttle_kind = 'inbound'
 
     sql = """
-        SELECT id, account, priority, period, max_msgs, max_quota, msg_size
+        SELECT id, account, priority, period, max_msgs, max_quota, msg_size, max_rcpts
           FROM throttle
          WHERE kind=%s AND account IN %s
          ORDER BY priority DESC
@@ -229,6 +232,7 @@ def apply_throttle(conn,
     continue_check_msg_size = True
     continue_check_max_msgs = True
     continue_check_max_quota = True
+    continue_check_max_rcpts = True
 
     # print detailed throttle setting
     throttle_info = ''
@@ -238,7 +242,7 @@ def apply_throttle(conn,
     tracking_sql_where = set()
 
     for rcd in throttle_records:
-        (_id, _account, _priority, _period, _max_msgs, _max_quota, _msg_size) = rcd
+        (_id, _account, _priority, _period, _max_msgs, _max_quota, _msg_size, _max_rcpts) = rcd
 
         # Skip throttle setting which doesn't have period
         if not _period:
@@ -296,6 +300,22 @@ def apply_throttle(conn,
             tracking_sql_where.add('(tid=%d AND account=%s)' % (_id, sql_user))
             throttle_info += 'max_quota=%(value)d (bytes)/id=%(tid)d/account=%(account)s; ' % t_settings['max_quota']
 
+        if continue_check_max_rcpts and _max_rcpts >= 0:
+            continue_check_max_rcpts = False
+            t_settings['max_rcpts'] = {'value': _max_rcpts,
+                                       'period': _period,
+                                       'tid': _id,
+                                       'account': _account,
+                                       'tracking_id': None,
+                                       'track_key': [],
+                                       'expired': False,
+                                       'cur_msgs': 0,
+                                       'cur_quota': 0,
+                                       'init_time': 0}
+            t_setting_keys[(_id, _account)].append('max_rcpts')
+            tracking_sql_where.add('(tid=%d AND account=%s)' % (_id, sql_user))
+            throttle_info += 'max_rcpts=%(value)d/id=%(tid)d/account=%(account)s; ' % t_settings['max_rcpts']
+
     if not t_settings:
         logger.debug('No valid %s throttle setting.' % throttle_type)
         return SMTP_ACTIONS['default']
@@ -319,6 +339,7 @@ def apply_throttle(conn,
             # Track based on sender email address
             v['track_key'].append(user)
             v['track_key'].append(domain)
+
     # Get throttle tracking data.
     # Construct SQL query WHERE statement
     sql = """SELECT id, tid, account, cur_msgs, cur_quota, init_time, last_time
@@ -455,6 +476,35 @@ def apply_throttle(conn,
                     user,
                     size,
                     msg_size,
+                    _period,
+                    pretty_left_seconds(_left_seconds)))
+
+        # Check max recipients in single message
+        if 'max_rcpts' in t_settings:
+            max_rcpts = t_settings['max_rcpts']['value']
+
+            _period = int(t_settings['max_rcpts'].get('period', 0))
+            _init_time = int(t_settings['max_rcpts'].get('init_time', 0))
+            _last_time = int(t_settings['max_rcpts'].get('last_time', 0))
+
+            # Check recipient count
+            if recipient_count > max_rcpts >= 0:
+                logger.info('[%s] [%s] Exceeds %s throttle for max_rcpts, current: %d recipient. (%s)' % (client_address,
+                                                                                                       user,
+                                                                                                       throttle_type,
+                                                                                                       recipient_count,
+                                                                                                       throttle_info))
+                return SMTP_ACTIONS['reject_max_rcpts_exceeded']
+            else:
+                # Show the time tracking record is about to expire
+                _left_seconds = _init_time + _period - _last_time
+
+                logger.info('[%s] %s throttle, %s -> max_rcpts (%d/%d, period: %d seconds, %s)' % (
+                    client_address,
+                    throttle_type,
+                    user,
+                    recipient_count,
+                    max_rcpts,
                     _period,
                     pretty_left_seconds(_left_seconds)))
 

@@ -23,6 +23,7 @@ SMTP_ACTIONS = {
     'reject_exceed_msg_size': 'REJECT Quota exceeded (size of single mail message)',
     'reject_exceed_max_msgs': 'REJECT Quota exceeded (number of mails in total)',
     'reject_exceed_max_quota': 'REJECT Quota exceeded (accumulated message size)',
+    'reject_exceed_max_rcpts': 'REJECT Too many recipients in single message',
     'greylisting': '451 4.7.1',
 }
 
