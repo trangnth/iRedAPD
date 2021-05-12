@@ -494,7 +494,7 @@ def apply_throttle(conn,
                                                                                                        throttle_type,
                                                                                                        recipient_count,
                                                                                                        throttle_info))
-                return SMTP_ACTIONS['reject_max_rcpts_exceeded']
+                return SMTP_ACTIONS['reject_exceed_max_rcpts']
             else:
                 # Show the time tracking record is about to expire
                 _left_seconds = _init_time + _period - _last_time
