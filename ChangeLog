@@ -1,4 +1,4 @@
-Update by trangnth: 13/05/2021
+Update by trangnth: 13/05/2021 (From branch old-version)
     * Limit max recipients in single message
     * Đếm số message được gửi đi, trong đó có email gửi ra ngoài 
     (tức là không quan tâm có bao nhiều người nhận là external, chỉ tính người gửi, gửi đi 1 message)

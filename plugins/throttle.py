@@ -720,6 +720,7 @@ def restriction(**kwargs):
         logger.debug("LOKJDSDSDAJJDKA - END-OF-MESSAGE: %s" % protocol_state)
         #tmpl_cache.set_value(key='rcpt_outbound', createfunc=init_rcpt, value=0)
         try:
+            logger.debug("TTTT - key_user: %s", key_user)
             tmpl_cache.remove_value(key=key_user)
         except:
             logger.debug("Cache removed (%s)" % key_user)
