@@ -1,3 +1,12 @@
+Update by trangnth: 13/05/2021
+    * Limit max recipients in single message
+    * Đếm số message được gửi đi, trong đó có email gửi ra ngoài 
+    (tức là không quan tâm có bao nhiều người nhận là external, chỉ tính người gửi, gửi đi 1 message)
+
+    * Before: 
+        * Đếm số recipients external trong một message, cộng tổng lại theo từng user và từng domain
+
+
 iRedAPD-2.2:
     * Improvements:
         + plugins/reject_sender_login_mismatch.py: If login mismatch (From: vs
