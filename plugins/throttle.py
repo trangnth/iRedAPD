@@ -177,7 +177,7 @@ def apply_throttle(conn,
                    instance_id,
                    is_sender_throttling=True,
                    is_external_sender=False,
-                   t_unix):
+                   t_unix=None):
     possible_addrs = [client_address, '@ip']
 
     if user:
