@@ -578,10 +578,13 @@ def apply_throttle(conn,
                         _sql += ['init_time = %d' % now]
                         _sql += ['cur_msgs = %d' % rcpt_outbound]
                         _sql += ['cur_quota = %d' % size]
+                        _sql += ['cur_msgs_send = 1']
+
                     else:
                         _sql += ['init_time = %d' % v['init_time']]
                         _sql += ['cur_msgs = cur_msgs + %d' % rcpt_outbound]
                         _sql += ['cur_quota = cur_quota + %d' % size]
+                        _sql += ['cur_msgs_send = cur_msgs_send + 1']
 
                     sql_updates[tracking_id] = _sql
 
@@ -589,13 +592,13 @@ def apply_throttle(conn,
                     # no tracking record. insert new one.
                     # (tid, account, cur_msgs, period, cur_quota, init_time, last_time)
                     if not (tid, k) in sql_inserts:
-                        _sql = '(%d, %s, %d, %d, %d, %d, %d)' % (tid, sqlquote(k), rcpt_outbound, v['period'], size, now, now)
+                        _sql = '(%d, %s, %d, %d, %d, %d, %d, %d)' % (tid, sqlquote(k), rcpt_outbound, v['period'], size, now, now, 1)
 
                         sql_inserts.append(_sql)
 
         if sql_inserts:
             sql = """INSERT INTO throttle_tracking
-                                 (tid, account, cur_msgs, period, cur_quota, init_time, last_time)
+                                 (tid, account, cur_msgs, period, cur_quota, init_time, last_time, cur_msgs_send)
                           VALUES """
             sql += ','.join(set(sql_inserts))
 
