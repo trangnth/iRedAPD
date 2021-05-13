@@ -176,7 +176,8 @@ def apply_throttle(conn,
                    recipient_count,
                    instance_id,
                    is_sender_throttling=True,
-                   is_external_sender=False):
+                   is_external_sender=False,
+                   t_unix=None):
     possible_addrs = [client_address, '@ip']
 
     if user:
@@ -402,6 +403,8 @@ def apply_throttle(conn,
     # Note: Don't update any tracking data in 'RCPT' state, because
     # current mail may be rejected by other plugins in 'END-OF-MESSAGE'
     # state or other restrictions in Postfix.
+    key_user = 'rcpt_outbound_%s_%d' % (user, t_unix)
+
     if protocol_state == 'RCPT':
         if 'max_msgs' in t_settings:
             max_msgs = t_settings['max_msgs']['value']
@@ -433,6 +436,8 @@ def apply_throttle(conn,
                                                                                                throttle_type,
                                                                                                max_msgs_cur_msgs,
                                                                                                throttle_info))
+                logger.debug("WLWLWLWLWWLWW - END-OF-MESSAGE: %s" % protocol_state)
+                tmpl_cache.remove_value(key=key_user)
                 return SMTP_ACTIONS['reject_exceed_max_msgs']
             else:
                 # Show the time tracking record is about to expire
@@ -448,7 +453,6 @@ def apply_throttle(conn,
                     pretty_left_seconds(_left_seconds)))
 
     elif protocol_state == 'END-OF-MESSAGE':
-        key_user = 'rcpt_outbound_%s' % user 
         # Check `msg_sizie`
         rcpt_outbound = tmpl_cache.get_value(key=key_user)
         if 'msg_size' in t_settings:
@@ -578,13 +582,11 @@ def apply_throttle(conn,
                         _sql += ['init_time = %d' % now]
                         _sql += ['cur_msgs = %d' % rcpt_outbound]
                         _sql += ['cur_quota = %d' % size]
-                        _sql += ['cur_msgs_send = 1']
 
                     else:
                         _sql += ['init_time = %d' % v['init_time']]
                         _sql += ['cur_msgs = cur_msgs + %d' % rcpt_outbound]
                         _sql += ['cur_quota = cur_quota + %d' % size]
-                        _sql += ['cur_msgs_send = cur_msgs_send + 1']
 
                     sql_updates[tracking_id] = _sql
 
@@ -592,13 +594,13 @@ def apply_throttle(conn,
                     # no tracking record. insert new one.
                     # (tid, account, cur_msgs, period, cur_quota, init_time, last_time)
                     if not (tid, k) in sql_inserts:
-                        _sql = '(%d, %s, %d, %d, %d, %d, %d, %d)' % (tid, sqlquote(k), rcpt_outbound, v['period'], size, now, now, 1)
+                        _sql = '(%d, %s, %d, %d, %d, %d, %d)' % (tid, sqlquote(k), rcpt_outbound, v['period'], size, now, now)
 
                         sql_inserts.append(_sql)
 
         if sql_inserts:
             sql = """INSERT INTO throttle_tracking
-                                 (tid, account, cur_msgs, period, cur_quota, init_time, last_time, cur_msgs_send)
+                                 (tid, account, cur_msgs, period, cur_quota, init_time, last_time)
                           VALUES """
             sql += ','.join(set(sql_inserts))
 
@@ -649,7 +651,8 @@ def restriction(**kwargs):
         logger.debug('SKIP: Sender domain (@%s) is same as recipient domain.' % sender_domain)
         return SMTP_ACTIONS['default']
 
-    key_user = 'rcpt_outbound_%s' % sender
+    t_unix = int(time.time())
+    key_user = 'rcpt_outbound_%s_%d' % (sender, t_unix)
     if protocol_state == 'RCPT':
         rcpt_outbound = rcpt_plus_one(key_user)
         tmpl_cache.set_value(key=key_user, createfunc=init_rcpt, value=rcpt_outbound)
@@ -685,7 +688,8 @@ def restriction(**kwargs):
                             recipient_count=recipient_count,
                             instance_id=instance_id,
                             is_sender_throttling=True,
-                            is_external_sender=is_external_sender)
+                            is_external_sender=is_external_sender,
+                            t_unix = t_unix)
 
     if not action.startswith('DUNNO'):
         return action
@@ -704,7 +708,8 @@ def restriction(**kwargs):
                                 size=size,
                                 recipient_count=recipient_count,
                                 instance_id=instance_id,
-                                is_sender_throttling=False)
+                                is_sender_throttling=False,
+                                t_unix=t_unix)
 
         if not action.startswith('DUNNO'):
             return action
@@ -712,7 +717,11 @@ def restriction(**kwargs):
     if protocol_state == "END-OF-MESSAGE":
         logger.debug("LOKJDSDSDAJJDKA - END-OF-MESSAGE: %s" % protocol_state)
         #tmpl_cache.set_value(key='rcpt_outbound', createfunc=init_rcpt, value=0)
-        tmpl_cache.remove_value(key=key_user)
+        try:
+            logger.debug("TTTT - key_user: %s", key_user)
+            tmpl_cache.remove_value(key=key_user)
+        except:
+            logger.debug("Cache removed (%s)" % key_user)
         #tmpl_cache.clear()
 
     return SMTP_ACTIONS['default']

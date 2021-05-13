@@ -1,3 +1,9 @@
+Update by trangnth: 13/05/2021 (From old-version)
+    * Limit max recipients in single message
+
+    * Before: 
+        * Đếm số recipients external trong một message, cộng tổng lại theo từng user và từng domain (không phải phát triển từ branch master)
+
 iRedAPD-2.2:
     * Improvements:
         + plugins/reject_sender_login_mismatch.py: If login mismatch (From: vs
