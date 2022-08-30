@@ -15,6 +15,7 @@ SMTP_ACTIONS = {
     'reject_forged_sender': 'REJECT SMTP AUTH is required for users under this sender domain',
     'reject_sender_login_mismatch': 'REJECT Sender is not same as SMTP authenticate username',
     'reject_blacklisted': 'REJECT Blacklisted',
+    'reject_blacklisted_group': 'REJECT You do not have permission to send messages to group',
     'reject_not_authorized': 'REJECT Not authorized',
     'reject_message_size_exceeded': 'REJECT Message size exceed (maybe caused by big attachment file)',
     'reject_blacklisted_rdns': 'REJECT Blacklisted reverse DNS name of server IP address',

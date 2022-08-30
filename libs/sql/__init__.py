@@ -33,7 +33,7 @@ def is_local_domain(conn,
                    FROM domain
                   WHERE domain=%s AND active=1 %s
                   LIMIT 1""" % (sql_quote_domain, sql_backupmx)
-        logger.debug("[SQL] query local domain ({}): \n{}".format(domain, sql))
+        logger.debug("[SQL] query local domain ({}): \n{}".format(domain, " ".join(sql.replace('\n', ' ').split())))
 
         qr = conn.execute(sql)
         sql_record = qr.fetchone()
@@ -54,7 +54,7 @@ def is_local_domain(conn,
                             AND alias_domain.alias_domain=%s
                       LIMIT 1""" % sql_quote_domain
 
-            logger.debug("[SQL] query alias domain ({}): \n{}".format(domain, repr(sql)))
+            logger.debug("[SQL] query alias domain ({}): \n{}".format(domain, repr(" ".join(sql.replace('\n', ' ').split()))))
 
             qr = conn.execute(sql)
             sql_record = qr.fetchone()
@@ -82,7 +82,7 @@ def get_alias_target_domain(alias_domain, conn):
                     AND alias_domain.alias_domain=%s
               LIMIT 1""" % sqlquote(alias_domain)
 
-    logger.debug("[SQL] query target domain of given alias domain ({}): \n{}".format(alias_domain, repr(sql)))
+    logger.debug("[SQL] query target domain of given alias domain ({}): \n{}".format(alias_domain, repr(" ".join(sql.replace('\n', ' ').split()))))
 
     qr = conn.execute(sql)
     sql_record = qr.fetchone()
@@ -113,7 +113,7 @@ def get_access_policy(mail, account_type, conn):
               WHERE address=%s
               LIMIT 1""" % (table, sqlquote(mail))
 
-    logger.debug("[SQL] query access policy: \n{}".format(sql))
+    logger.debug("[SQL] query access policy: \n{}".format(" ".join(sql.replace('\n', ' ').split())))
 
     qr = conn.execute(sql)
     record = qr.fetchone()

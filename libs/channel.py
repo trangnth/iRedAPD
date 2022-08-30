@@ -25,6 +25,7 @@ fqdn = socket.getfqdn()
 class DaemonSocket(asyncore.dispatcher):
     """Create socket daemon"""
     def __init__(self, local_addr, db_conns, policy_channel, plugins=None):
+        logger.debug("TRANGNTH - plugins: %s" % plugins)
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
@@ -38,9 +39,11 @@ class DaemonSocket(asyncore.dispatcher):
         self.sender_search_attrlist = []
         self.recipient_search_attrlist = []
 
+        logger.debug("TRANGNTH - plugins: %s" % plugins)
         # Load enabled plugins.
         if plugins:
             qr = utils.load_enabled_plugins(plugins=plugins)
+            logger.info("TRANGNTH-DEBUG: Load enabled plugins: %s" % qr)
             self.loaded_plugins = qr['loaded_plugins']
             self.sender_search_attrlist = qr['sender_search_attrlist']
             self.recipient_search_attrlist = qr['recipient_search_attrlist']
@@ -50,6 +53,7 @@ class DaemonSocket(asyncore.dispatcher):
         sock, remote_addr = self.accept()
 
         if self.policy_channel == 'policy':
+            logger.info("TRANGNTH-DEBUG: handle_accept %s" % self.policy_channel)
             try:
                 Policy(sock,
                        db_conns=self.db_conns,
@@ -102,6 +106,7 @@ class Policy(asynchat.async_chat):
         if self.buffer:
             # Format received data
             line = self.buffer.pop().decode()
+#            logger.debug("TRANGNTH_DEBUG buffer")
 
             if '=' in line:
                 logger.debug("[policy] {}".format(line))
@@ -161,6 +166,7 @@ class Policy(asynchat.async_chat):
                 action = SMTP_ACTIONS['default']
                 logger.error("Unexpected error: {}. Fallback to default action: {}".format(repr(e), action))
 
+            logger.info("TRANGNTH-DEBUG: action=%s" % action)
             self.push('action=' + action + '\n')
             logger.debug("Session ended.")
 

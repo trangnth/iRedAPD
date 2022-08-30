@@ -81,3 +81,55 @@ source files to understand what it does and how it works.
 
 * `sql_alias_access_policy`: restrict who can send email to mail alias.
 * `sql_force_change_password_in_days`: force users to change password in days (default 90 days). User cannot send email before resetting password.
+
+
+==========================================
+
+## Install on Ubuntu 20
+
+* ENV
+
+```sh
+Python 3.8.10
+OS: Ubuntu 20.04.3
+```
+
+* Install 
+
+```sh
+apt install python3-mysqldb -y
+adduser --shell /sbin/nologin --home /home/iredapd --disabled-login iredapd
+
+cd /opt
+git clone -b wblist_extra https://github.com/iredmail/iRedAPD
+ln -s /opt/iRedAPD /opt/iredapd
+cd iredapd
+cp rc_scripts/iredapd.debian /etc/init.d/iredapd
+
+# Config log
+mkdir /var/log/iredapd
+touch /var/log/iredapd/iredapd.log
+chmod +w /var/log/iredapd/iredapd.log
+cp samples/rsyslog.d/iredapd.conf /etc/rsyslog.d/
+cp samples/logrotate.d/iredapd /etc/logrotate.d/
+
+systemctl restart rsyslog
+systemctl restart logrotate.timer
+
+
+# Config iredapd
+cp  settings.py.sample  settings.py
+pip3 install -r  requirements.txt
+
+# Edit settings.py 
+vim settings.py 
+
+# Restart service 
+systemctl daemon-reload
+systemctl restart iredapd
+systemctl enable iredapd
+
+```
+
+
+
