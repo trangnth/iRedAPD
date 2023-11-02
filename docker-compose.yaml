@@ -1,0 +1,31 @@
+# File setting.py must set listen_address = '0.0.0.0'
+
+version: "3"
+services:
+  iredapd-main:
+    privileged: true
+    image: hub.paas.vn/email_service/iredapd:test_u20_v1
+    container_name: iredapd-main
+    environment:
+      PROCESS: main
+    volumes:
+      - /etc/iredapd/settings.py:/opt/iredapd/settings.py
+      - /var/log/iredapd/:/var/log/iredapd/
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/passwd:/etc/passwd:rw
+      - /etc/group:/etc/group:rw
+    ports:
+      - 127.0.0.1:7777:7777
+    restart: always
+
+
+## only run in cron job at 00:00:00 every day
+#  iredapd-clean_throttle_db_daily:
+#    image: hub.paas.vn/email_service/iredapd:test_u16_v1
+#    container_name: iredapd_clean_throttle_db_daily
+#    environment:
+#      PROCESS: clean_throttle_db_daily
+#    volumes:
+#       - /etc/vm-datatransfer-staging/app.yml:/etc/app.yaml
+#       - /var/log/vm-datatransfer/daily/:/var/log/vm-datatransfer/
+##    entrypoint: /usr/bin/python /opt/iredapd/tools/cleanup_db.py
