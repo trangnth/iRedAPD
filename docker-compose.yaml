@@ -8,14 +8,21 @@ services:
     container_name: iredapd-main
     environment:
       PROCESS: main
+      LOG_SMTP_SESSIONS: False
+      SYSLOG_SERVER: /run/systemd/journal/syslog
+      SYSLOG_FACILITY: 16
     volumes:
       - /etc/iredapd/settings.py:/opt/iredapd/settings.py
       - /var/log/iredapd/:/var/log/iredapd/
       - /etc/localtime:/etc/localtime:ro
       - /etc/passwd:/etc/passwd:rw
       - /etc/group:/etc/group:rw
+      - /run/systemd/journal/syslog:/run/systemd/journal/syslog:rw
+      - /etc/rsyslog.d/:/etc/rsyslog.d/:rw
     ports:
       - 127.0.0.1:7777:7777
+      - 127.0.0.1:7778:7778
+      - 127.0.0.1:7779:7779
     restart: always
 
 

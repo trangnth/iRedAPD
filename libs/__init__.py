@@ -25,6 +25,7 @@ SMTP_ACTIONS = {
     # Sender Score
     'reject_low_sender_score': 'REJECT Server IP address has bad reputation. FYI: https://www.senderscore.org/lookup.php?lookup=',
     'greylisting': '451 4.7.1',
+    'reject_domain_sender_not_allow': 'REJECT Domain sender is not allow to send with this SMTP user',
 }
 
 # Default replies for Postfix tcp table.
