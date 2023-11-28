@@ -51,6 +51,19 @@ def restriction(**kwargs):
     sasl_username = kwargs['sasl_username']
     domain_sender = sender.split('@')[1]
 
+    # Query username
+    sql = "select domain from domain_mkt where address='%s'" % (sasl_username)
+
+    logger.debug('[SQL] Query user sender : {}'.format(sql))
+    qr = conn.execute(sql)
+    user = qr.fetchall()
+
+    if not user:
+        logger.debug('user sender not fonud -> allow all')
+        return SMTP_ACTIONS['default']
+
+    # If user sender found in policy table, search domain or subdomain allowed to send email
+
     # Query domain 
     sql_1 = "select domain from domain_mkt where address='%s' and domain='%s'" % (sasl_username, domain_sender)
     # Query subdomain
@@ -64,9 +77,10 @@ def restriction(**kwargs):
 
     if not domains:
         query_2 = conn.execute(sql_2)
-        logger.debug('[SQL] Query subdomain sender: {}' .format(sql_2))
         domains_2 = query_2.fetchall()
+        logger.debug('[SQL] Query subdomain sender: {}' .format(sql_2))
         logger.debug('[SQL] Query subdomain result: {}'.format(domains_2))
+
         if domains_2:
             for d in domains_2:
                 logger.info(d)
@@ -75,10 +89,10 @@ def restriction(**kwargs):
                     return SMTP_ACTIONS['default']
 
             logger.info("subdomain not ok")
-            return SMTP_ACTIONS['default']
+            return SMTP_ACTIONS['reject_domain_sender_not_allow']
         else:
             logger.info("subdomain not found")
-            return SMTP_ACTIONS['default']
+            return SMTP_ACTIONS['reject_domain_sender_not_allow']
 
     else:
         logger.info("domain ok")
