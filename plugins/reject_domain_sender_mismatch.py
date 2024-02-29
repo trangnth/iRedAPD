@@ -52,12 +52,14 @@ def restriction(**kwargs):
     domain_sender = sender.split('@')[1]
 
     # Query username
-    sql = "select domain from domain_mkt where address='%s'" % (sasl_username)
+    #sql = "select domain from domain_mkt where address='%s'" % (sasl_username)
+    sql = "select domain from alias where name='%s'" % (sasl_username)
 
     logger.debug('[SQL] Query user sender : {}'.format(sql))
     qr = conn.execute(sql)
     user = qr.fetchall()
 
+    ## postfix allow ip in mynetwork config 
     if not user:
         logger.debug('user sender not fonud -> allow all')
         return SMTP_ACTIONS['default']
@@ -65,9 +67,11 @@ def restriction(**kwargs):
     # If user sender found in policy table, search domain or subdomain allowed to send email
 
     # Query domain 
-    sql_1 = "select domain from domain_mkt where address='%s' and domain='%s'" % (sasl_username, domain_sender)
+    #sql_1 = "select domain from domain_mkt where address='%s' and domain='%s'" % (sasl_username, domain_sender)
+    sql_1 = "select domain from alias where name='%s' and domain='%s' and active=1" % (sasl_username, domain_sender)
     # Query subdomain
-    sql_2 = "select domain from domain_mkt where address={} and domain like {}" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
+    #sql_2 = "select domain from domain_mkt where address={} and domain like {}" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
+    sql_2 = "select domain from alias where name={} and domain like {} and active=1" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
 
     logger.debug('[SQL] Query domain sender : {}'.format(sql_1))
     query = conn.execute(sql_1)

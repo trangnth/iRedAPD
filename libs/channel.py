@@ -242,15 +242,16 @@ class SRS(asynchat.async_chat):
                 sql = """SELECT id FROM srs_exclude_domains WHERE domain IN %s LIMIT 1""" % sqlquote(list(possible_domains))
                 logger.debug("{} [SQL] Query srs_exclude_domains: {}".format(self.log_prefix, sql))
 
-                try:
-                    qr = conn_iredapd.execute(sql)
-                    sql_record = qr.fetchone()
-                    logger.debug("{} [SQL] Query result: {}".format(self.log_prefix, sql_record))
-                except Exception as e:
-                    logger.debug("{} Error while querying SQL: {}".format(self.log_prefix, repr(e)))
-                    reply = TCP_REPLIES['not_exist']
-                    return reply
+                #try:
+                #    qr = conn_iredapd.execute(sql)
+                #    sql_record = qr.fetchone()
+                #    logger.debug("{} [SQL] Query result: {}".format(self.log_prefix, sql_record))
+                #except Exception as e:
+                #    logger.debug("{} Error while querying SQL: {}".format(self.log_prefix, repr(e)))
+                #    reply = TCP_REPLIES['not_exist']
+                #    return reply
 
+                sql_record = 0
                 if sql_record:
                     reply = TCP_REPLIES['not_exist'] + 'Domain is explicitly excluded, bypassed.'
                     return reply

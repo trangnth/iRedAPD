@@ -1,3 +1,24 @@
+## NOTE 
+by trangnth@bizflycloud.vn
+
+Change: 
+- SRS not query exclude domain
+- add reject_domain_sender_mismatch plugin 
+
+Command:
+
+```sh
+cd iRedAPD
+docker build -t hub.paas.vn/email_service/iredapd:mkt-proxy .
+
+# edit image tag in docker-compose.yaml file, then run command
+docker-compose -f docker-compose.yaml up -d
+
+# restart rsyslog 
+systemctl restart rsyslog
+```
+
+
 # Introduction
 
 > Don't forget to check out our lightweight email archiving software: https://spiderd.io/
