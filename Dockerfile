@@ -1,8 +1,9 @@
 FROM ubuntu:20.04
 ## Iredapd version 5.3.3
 
-RUN apt update -y
-RUN apt install -y python3-mysqldb python3-sqlalchemy python3-webpy python3-pymysql python3-pip patch
+RUN apt update -y && apt upgrade -y
+RUN apt install -y python3-mysqldb python3-sqlalchemy python3-webpy python3-pymysql python3-pip patch 
+RUN apt install -y vim
 
 #RUN pip install beaker
 
@@ -18,8 +19,6 @@ RUN mkdir /var/log/iredapd/
 RUN touch /var/log/iredapd/iredapd.log
 RUN chown iredapd:iredapd -R /var/log/iredapd/
 # mount volume /opt/iredapd/settings.py
-
-RUN apt install vim net-tools -y
 
 COPY scripts/* /home/
 RUN chmod a+x /home/*

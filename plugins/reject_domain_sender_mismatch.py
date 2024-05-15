@@ -53,7 +53,7 @@ def restriction(**kwargs):
 
     # Query username
     #sql = "select domain from domain_mkt where address='%s'" % (sasl_username)
-    sql = "select domain from alias where name='%s'" % (sasl_username)
+    sql = "select domain from mkt_domain where account='%s'" % (sasl_username)
 
     logger.debug('[SQL] Query user sender : {}'.format(sql))
     qr = conn.execute(sql)
@@ -68,10 +68,10 @@ def restriction(**kwargs):
 
     # Query domain 
     #sql_1 = "select domain from domain_mkt where address='%s' and domain='%s'" % (sasl_username, domain_sender)
-    sql_1 = "select domain from alias where name='%s' and domain='%s' and active=1" % (sasl_username, domain_sender)
+    sql_1 = "select domain from mkt_domain where account='%s' and domain='%s' and active=1" % (sasl_username, domain_sender)
     # Query subdomain
     #sql_2 = "select domain from domain_mkt where address={} and domain like {}" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
-    sql_2 = "select domain from alias where name={} and domain like {} and active=1" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
+    sql_2 = "select domain from mkt_domain where account={} and domain like {} and active=1" . format(sqlquote(sasl_username), sqlquote("%%*%%"))
 
     logger.debug('[SQL] Query domain sender : {}'.format(sql_1))
     query = conn.execute(sql_1)
